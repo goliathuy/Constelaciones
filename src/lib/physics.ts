@@ -140,7 +140,7 @@ export function updatePhysics(
       const dy = b.y - a.y;
       const dist = Math.hypot(dx, dy);
 
-      if (dist === 0) continue;
+      if (dist < 0.5) continue;
 
       // 1. Repulsion force (anti-collision): distance < 22px
       if (dist < PHYSICS_CONFIG.REPULSION_DIST) {

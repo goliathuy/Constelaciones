@@ -208,9 +208,14 @@ export default function App() {
     resonanceDurationLeftRef.current = 0;
     timeAccumulatorRef.current = 0;
     
-    // Create baseline nodes
-    const width = canvasRef.current?.width || window.innerWidth;
-    const height = canvasRef.current?.height || window.innerHeight;
+    // Create baseline nodes in LOGICAL coordinates (correctly scaled by DPR)
+    const dpr = window.devicePixelRatio || 1;
+    const width = (canvasRef.current && canvasRef.current.width > 0)
+      ? (canvasRef.current.width / dpr)
+      : (containerRef.current?.clientWidth || window.innerWidth || 800);
+    const height = (canvasRef.current && canvasRef.current.height > 0)
+      ? (canvasRef.current.height / dpr)
+      : (containerRef.current?.clientHeight || window.innerHeight || 600);
     nodesRef.current = generateInitialNodes(isMobileMode ? 25 : PHYSICS_CONFIG.INITIAL_NODES, width, height);
     
     // Clear interactive inputs
@@ -797,15 +802,18 @@ export default function App() {
     };
   }, [isPlaying, isGameOver]);
 
-  // Handle Resize triggers
+  // Handle Resize triggers using a high-fidelity ResizeObserver on the container
   useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
     const handleResize = () => {
       const canvas = canvasRef.current;
-      const container = containerRef.current;
       if (canvas && container) {
         const dpr = window.devicePixelRatio || 1;
-        const w = container.clientWidth;
-        const h = container.clientHeight;
+        // Use clientWidth/Height with full window fallbacks to avoid 0px iframe glitches
+        const w = container.clientWidth || window.innerWidth || 800;
+        const h = container.clientHeight || window.innerHeight || 600;
         canvas.width = w * dpr;
         canvas.height = h * dpr;
         canvas.style.width = `${w}px`;
@@ -817,11 +825,20 @@ export default function App() {
       }
     };
 
+    const resizeObserver = new ResizeObserver(() => {
+      handleResize();
+    });
+    
+    resizeObserver.observe(container);
     window.addEventListener('resize', handleResize);
+    
     // run once immediately
     handleResize();
 
-    return () => window.removeEventListener('resize', handleResize);
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', handleResize);
+    };
   }, []);
 
   // Determine System Zone based on health
