@@ -47,18 +47,35 @@ export function generateIncomingNode(width: number, height: number): GameNode {
       break;
   }
 
+  const typeRoll = Math.random();
+  let specialType: 'normal' | 'influencer' | 'disruptor' | 'organizador' = 'normal';
+  let size = 4 + Math.random() * 4;
+
+  if (typeRoll < 0.06) {
+    specialType = 'influencer';
+    size = 7.5; // larger
+  } else if (typeRoll < 0.12) {
+    specialType = 'disruptor';
+    size = 6.0;
+  } else if (typeRoll < 0.18) {
+    specialType = 'organizador';
+    size = 6.5;
+  }
+
   return {
     id,
     x,
     y,
     vx,
     vy,
-    r: 4 + Math.random() * 4, // radii between 4px and 8px
+    r: size,
     energy: 0.1, // starts cool, gets energized when interacting
     groupId: null,
     lifetime: Date.now(),
     isGhost: false,
-    colorIndex: Math.floor(Math.random() * 5),
+    colorIndex: Math.floor(Math.random() * 4), // 4 distinct affinity groups
+    specialType,
+    isolatedTimer: specialType === 'influencer' ? 0 : undefined
   };
 }
 
@@ -66,18 +83,33 @@ export function generateIncomingNode(width: number, height: number): GameNode {
 export function generateInitialNodes(count: number, width: number, height: number): GameNode[] {
   const nodes: GameNode[] = [];
   for (let i = 0; i < count; i++) {
+    const typeRoll = Math.random();
+    let specialType: 'normal' | 'influencer' | 'disruptor' | 'organizador' = 'normal';
+    let size = 4 + Math.random() * 4;
+
+    // Spawn only 1-2 special nodes initially so the board starts cleanly
+    if (i === 10) {
+      specialType = 'influencer';
+      size = 7.5;
+    } else if (i === 20) {
+      specialType = 'organizador';
+      size = 6.5;
+    }
+
     nodes.push({
       id: Math.random().toString(36).substring(2, 9),
       x: 50 + Math.random() * (width - 100),
       y: 50 + Math.random() * (height - 100),
       vx: (Math.random() - 0.5) * 1.2,
       vy: (Math.random() - 0.5) * 1.2,
-      r: 4 + Math.random() * 4,
+      r: size,
       energy: 0.2,
       groupId: null,
       lifetime: Date.now() - Math.random() * 50000, // staggered initial lifetimes
       isGhost: false,
-      colorIndex: Math.floor(Math.random() * 5),
+      colorIndex: Math.floor(Math.random() * 4), // 4 distinct affinity groups
+      specialType,
+      isolatedTimer: specialType === 'influencer' ? 0 : undefined
     });
   }
   return nodes;
@@ -153,13 +185,52 @@ export function updatePhysics(
         a.energy = Math.min(1.0, a.energy + 0.1); // energize on collision
         neighborCount++;
       }
-      // 2. Attraction force (social gravity): distance between 70px and 120px
-      else if (dist >= PHYSICS_CONFIG.ATTRACT_DIST_MIN && dist <= PHYSICS_CONFIG.ATTRACT_DIST_MAX) {
-        // Linear ramp attraction: gets slightly stronger as they separate
-        const force = (dist - PHYSICS_CONFIG.ATTRACT_DIST_MIN) / (PHYSICS_CONFIG.ATTRACT_DIST_MAX - PHYSICS_CONFIG.ATTRACT_DIST_MIN) * baseAttraction * resonanceMultiplier;
+
+      // 2. Special Node: Disruptor repulsion (if nearby)
+      if (b.specialType === 'disruptor' && dist < 110) {
+        const force = (110 - dist) / 110 * 0.06 * resonanceMultiplier;
+        fx -= (dx / dist) * force;
+        fy -= (dy / dist) * force;
+        a.energy = Math.min(1.0, a.energy + 0.02);
+      }
+
+      // 3. Special Node: Influencer strong attraction (regardless of affinity)
+      else if (b.specialType === 'influencer' && dist >= 40 && dist <= 190) {
+        const force = (dist - 40) / 150 * baseAttraction * 1.8 * resonanceMultiplier;
         fx += (dx / dist) * force;
         fy += (dy / dist) * force;
         neighborCount++;
+      }
+
+      // 4. Special Node: Organizador gentle attraction & stabilization
+      else if (b.specialType === 'organizador' && dist >= 25 && dist <= 140) {
+        const force = (dist - 25) / 115 * baseAttraction * 1.3 * resonanceMultiplier;
+        fx += (dx / dist) * force;
+        fy += (dy / dist) * force;
+        neighborCount++;
+        // Apply velocity damping to stabilize
+        a.vx *= 0.96;
+        a.vy *= 0.96;
+      }
+
+      // 5. Standard node attraction (social gravity with Affinity Rules)
+      else if (dist >= PHYSICS_CONFIG.ATTRACT_DIST_MIN && dist <= PHYSICS_CONFIG.ATTRACT_DIST_MAX) {
+        // Affinity rules:
+        // Same affinity (colorIndex matches): attraction x1.0, fragmentation x0.8
+        // Different affinity: attraction x0.3, fragmentation x0.0
+        const isSameAffinity = a.colorIndex === b.colorIndex;
+        let affinityMult = isSameAffinity ? 1.0 : 0.3;
+        
+        if (activeEvent.type === 'FRAGMENTACION') {
+          affinityMult = isSameAffinity ? 0.8 : 0.0;
+        }
+
+        if (affinityMult > 0) {
+          const force = (dist - PHYSICS_CONFIG.ATTRACT_DIST_MIN) / (PHYSICS_CONFIG.ATTRACT_DIST_MAX - PHYSICS_CONFIG.ATTRACT_DIST_MIN) * baseAttraction * resonanceMultiplier * affinityMult;
+          fx += (dx / dist) * force;
+          fy += (dy / dist) * force;
+          neighborCount++;
+        }
       }
 
       // 1.5. Dynamic orbital/swirling force inside clusters to make congestion feel alive
@@ -254,6 +325,25 @@ export function updatePhysics(
 
     // Decay energy gradually
     a.energy = Math.max(0.1, a.energy - 0.015);
+
+    // Track isolation time for influencers
+    if (a.specialType === 'influencer') {
+      let isIsolated = true;
+      for (let j = 0; j < nodes.length; j++) {
+        if (nodes[j].id === a.id || nodes[j].isGhost) continue;
+        const dist = Math.hypot(nodes[j].x - a.x, nodes[j].y - a.y);
+        if (dist < PHYSICS_CONFIG.CONNECT_DIST) {
+          isIsolated = false;
+          break;
+        }
+      }
+      if (isIsolated) {
+        a.isolatedTimer = (a.isolatedTimer || 0) + 0.016; // approx seconds at 60fps
+        a.energy = Math.min(1.0, a.energy + 0.04);
+      } else {
+        a.isolatedTimer = 0;
+      }
+    }
 
     // Wall bounces with soft restitution
     const bouncePadding = 12;

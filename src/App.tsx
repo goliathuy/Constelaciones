@@ -21,7 +21,8 @@ import {
   Award,
   Cpu,
   Smartphone,
-  Radio
+  Radio,
+  Target
 } from 'lucide-react';
 import { 
   GameNode, 
@@ -29,7 +30,8 @@ import {
   GameEvent, 
   EventType, 
   PHYSICS_CONFIG, 
-  SystemZone 
+  SystemZone,
+  DynamicObjective
 } from './types';
 import { 
   generateInitialNodes, 
@@ -110,6 +112,89 @@ export default function App() {
   // Interaction Settings
   const [interactionMode, setInteractionMode] = useState<'attract' | 'repel'>('repel');
   const [isHolding, setIsHolding] = useState<boolean>(false);
+
+  // Dynamic Objectives State
+  const [currentObjective, setCurrentObjective] = useState<DynamicObjective | null>(null);
+  const currentObjectiveRef = useRef<DynamicObjective | null>(null);
+  const objectiveSwitchTimerRef = useRef<number>(0); // timer until next objective starts
+
+  // Dynamic Floating Text score markers for animations
+  const [floatingTexts, setFloatingTexts] = useState<Array<{ id: string; x: number; y: number; text: string; opacity: number; color: string }>>([]);
+
+  const OBJECTIVE_TEMPLATES: Array<Omit<DynamicObjective, 'id' | 'currentProgress' | 'status'>> = [
+    {
+      title: "Sincronía Cohesiva",
+      description: "Mantén la calidad de la red superior a 65%.",
+      type: "MANTENER_SINCRONIA",
+      targetValue: 65,
+      durationToHold: 15
+    },
+    {
+      title: "Comunidades Activas",
+      description: "Mantén 3 o más clusters de comunicación simultáneos.",
+      type: "MANTENER_COMUNIDADES",
+      targetValue: 3,
+      durationToHold: 15
+    },
+    {
+      title: "Estabilidad Social",
+      description: "Estabiliza la red y evita la Congestión (salud <= 75).",
+      type: "EVITAR_CONGESTION",
+      targetValue: 75,
+      durationToHold: 12
+    },
+    {
+      title: "Vínculos Activos",
+      description: "Saca a los nodos de la soledad y el Aislamiento (salud >= 25).",
+      type: "EVITAR_AISLAMIENTO",
+      targetValue: 25,
+      durationToHold: 12
+    },
+    {
+      title: "Red de Influencia",
+      description: "Impide que los nodos Influencers queden aislados de la red.",
+      type: "CONECTAR_ESPECIALES",
+      targetValue: 1,
+      durationToHold: 15
+    }
+  ];
+
+  const rollNewObjective = () => {
+    const template = OBJECTIVE_TEMPLATES[Math.floor(Math.random() * OBJECTIVE_TEMPLATES.length)];
+    const newObj: DynamicObjective = {
+      id: Math.random().toString(36).substring(2, 9),
+      title: template.title,
+      description: template.description,
+      type: template.type,
+      targetValue: template.targetValue,
+      currentProgress: 0,
+      durationToHold: template.durationToHold,
+      status: 'ACTIVE'
+    };
+    setCurrentObjective(newObj);
+    currentObjectiveRef.current = newObj;
+  };
+
+  const checkObjectiveCondition = (objectiveType: string, metrics: GameMetrics, nodes: GameNode[]): boolean => {
+    switch (objectiveType) {
+      case 'MANTENER_COMUNIDADES':
+        return metrics.clusterCount >= 3;
+      case 'MANTENER_SINCRONIA':
+        return metrics.clusterQuality >= 65 && metrics.clusterCount >= 1;
+      case 'EVITAR_CONGESTION':
+        return metrics.health <= 75;
+      case 'EVITAR_AISLAMIENTO':
+        return metrics.health >= 25;
+      case 'CONECTAR_ESPECIALES': {
+        const influencers = nodes.filter(n => !n.isGhost && n.specialType === 'influencer');
+        if (influencers.length === 0) return true; // trivially met if none
+        // none of them are isolated
+        return influencers.every(inf => !inf.isolatedTimer || inf.isolatedTimer < 0.5);
+      }
+      default:
+        return false;
+    }
+  };
 
   // Active Environmental Event State
   const [activeEvent, setActiveEvent] = useState<GameEvent>({
@@ -245,6 +330,10 @@ export default function App() {
     if (audioActive) {
       ambientSynth.updateHealth(50);
     }
+
+    rollNewObjective();
+    setFloatingTexts([]);
+    objectiveSwitchTimerRef.current = 0;
   };
 
   // Trigger global Pulse action
@@ -611,6 +700,93 @@ export default function App() {
           setCriticalSecondsLeft(10.0);
         }
 
+        // 6.5. Update Dynamic Objectives and floating texts
+        setFloatingTexts(prev => {
+          return prev
+            .map(ft => ({ ...ft, y: ft.y - 40 * dt, opacity: ft.opacity - 0.8 * dt }))
+            .filter(ft => ft.opacity > 0);
+        });
+
+        if (currentObjectiveRef.current) {
+          const obj = currentObjectiveRef.current;
+          if (obj.status === 'ACTIVE') {
+            const isMet = checkObjectiveCondition(obj.type, nextMetrics, nodesRef.current);
+            if (isMet) {
+              const nextProg = obj.currentProgress + dt;
+              if (nextProg >= obj.durationToHold) {
+                // Completed!
+                const updatedObj = { ...obj, currentProgress: obj.durationToHold, status: 'COMPLETED' as const };
+                setCurrentObjective(updatedObj);
+                currentObjectiveRef.current = updatedObj;
+
+                // Award bonus points!
+                setScore(prev => {
+                  const newScore = prev + 500;
+                  const rounded = Math.round(newScore);
+                  if (rounded > highScoreRef.current) {
+                    setHighScore(rounded);
+                    try {
+                      localStorage.setItem('constelaciones_high_score', rounded.toString());
+                    } catch {}
+                  }
+                  return newScore;
+                });
+
+                // Spawn beautiful floating text
+                setFloatingTexts(prev => [
+                  ...prev,
+                  {
+                    id: Math.random().toString(36).substring(2, 9),
+                    x: width / 2,
+                    y: height * 0.35,
+                    text: "✨ ¡OBJETIVO COMPLETADO! +500 PTS ✨",
+                    opacity: 1.0,
+                    color: "rgba(245, 158, 11, opacity)" // gold glowing color
+                  }
+                ]);
+
+                // Play custom synthesized melody for success!
+                if (audioActiveRef.current) {
+                  ambientSynth.playResonanceSFX();
+                }
+
+                objectiveSwitchTimerRef.current = 5.0; // 5 seconds of calm before next challenge
+              } else {
+                const updatedObj = { ...obj, currentProgress: nextProg };
+                setCurrentObjective(updatedObj);
+                currentObjectiveRef.current = updatedObj;
+              }
+            } else {
+              // Reset progress if condition is broken
+              if (obj.currentProgress > 0) {
+                const updatedObj = { ...obj, currentProgress: 0 };
+                setCurrentObjective(updatedObj);
+                currentObjectiveRef.current = updatedObj;
+              }
+            }
+          } else if (obj.status === 'COMPLETED') {
+            objectiveSwitchTimerRef.current -= dt;
+            if (objectiveSwitchTimerRef.current <= 0) {
+              rollNewObjective();
+              // Spawn starting alert text
+              if (currentObjectiveRef.current) {
+                const nextObjName = currentObjectiveRef.current.title;
+                setFloatingTexts(prev => [
+                  ...prev,
+                  {
+                    id: Math.random().toString(36).substring(2, 9),
+                    x: width / 2,
+                    y: height * 0.35,
+                    text: `Nuevo Objetivo: ${nextObjName}`,
+                    opacity: 1.0,
+                    color: "rgba(168, 85, 247, opacity)" // violet
+                  }
+                ]);
+              }
+            }
+          }
+        }
+
         // 7. CANVAS RENDERING
         ctx.save();
         ctx.scale(dpr, dpr);
@@ -753,27 +929,32 @@ export default function App() {
           // Determine opacity based on whether it is fading out (isGhost)
           const opacity = n.isGhost && n.ghostProgress !== undefined ? n.ghostProgress : 1.0;
           
-          // Outer social field aura
-          const glowRadius = n.r * (3.5 + n.energy * 2.5);
-          const radGrad = ctx.createRadialGradient(n.x, n.y, n.r * 0.5, n.x, n.y, glowRadius);
+          // 4 distinct affinity group colors
+          const affinityColors = [
+            { r: 56, g: 189, b: 248 }, // 0: Blue (Azul)
+            { r: 34, g: 197, b: 94 },  // 1: Green (Verde)
+            { r: 249, g: 115, b: 22 }, // 2: Orange (Naranja)
+            { r: 168, g: 85, b: 247 }  // 3: Purple (Violeta)
+          ];
+
+          let colorTheme = affinityColors[n.colorIndex % affinityColors.length];
           
-          let colorTheme = { r: 56, g: 189, b: 248 }; // light cyan default
-          if (isPartOfCluster) {
-            colorTheme = { r: 52, g: 211, b: 153 }; // emerald constellation green
-          } else if (n.energy > 0.5) {
-            colorTheme = { r: 168, g: 85, b: 247 }; // glowing resonance violet
-          } else {
-            // cycle colors softly based on node ID hash or index
-            const colors = [
-              { r: 56, g: 189, b: 248 }, // cyan
-              { r: 14, g: 165, b: 233 }, // blue
-              { r: 129, g: 140, b: 248 }, // indigo
-              { r: 99, g: 102, b: 241 }, // purple
-              { r: 244, g: 63, b: 94 } // rose
-            ];
-            colorTheme = colors[n.colorIndex % colors.length];
+          // Outer social field aura (custom sizing for specials)
+          let auraScale = 3.5;
+          if (n.specialType === 'influencer') {
+            auraScale = 4.8;
+            colorTheme = { r: 234, g: 179, b: 8 }; // Gold
+          } else if (n.specialType === 'disruptor') {
+            auraScale = 3.8;
+            colorTheme = { r: 239, g: 68, b: 68 }; // Red
+          } else if (n.specialType === 'organizador') {
+            auraScale = 4.0;
+            colorTheme = { r: 34, g: 211, b: 238 }; // Cyan/Teal
           }
 
+          const glowRadius = n.r * (auraScale + n.energy * 2.5);
+          const radGrad = ctx.createRadialGradient(n.x, n.y, n.r * 0.5, n.x, n.y, glowRadius);
+          
           radGrad.addColorStop(0, `rgba(${colorTheme.r}, ${colorTheme.g}, ${colorTheme.b}, ${opacity * 0.9})`);
           radGrad.addColorStop(0.3, `rgba(${colorTheme.r}, ${colorTheme.g}, ${colorTheme.b}, ${opacity * 0.4})`);
           radGrad.addColorStop(1, `rgba(${colorTheme.r}, ${colorTheme.g}, ${colorTheme.b}, 0)`);
@@ -782,6 +963,44 @@ export default function App() {
           ctx.beginPath();
           ctx.arc(n.x, n.y, glowRadius, 0, Math.PI * 2);
           ctx.fill();
+
+          // Draw Special Node visual geometric indicators
+          if (n.specialType === 'influencer') {
+            const isFlashingRed = n.isolatedTimer && n.isolatedTimer > 4.0 && Math.floor(Date.now() / 250) % 2 === 0;
+            const ringColor = isFlashingRed ? { r: 239, g: 68, b: 68 } : { r: 234, g: 179, b: 8 };
+            
+            ctx.strokeStyle = `rgba(${ringColor.r}, ${ringColor.g}, ${ringColor.b}, ${opacity * 0.85})`;
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, n.r * (2.1 + Math.sin(timestamp * 0.007) * 0.3), 0, Math.PI * 2);
+            ctx.stroke();
+          } else if (n.specialType === 'disruptor') {
+            ctx.strokeStyle = `rgba(239, 68, 68, ${opacity * 0.8})`;
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            const angle = timestamp * 0.0025;
+            for (let k = 0; k < 4; k++) {
+              const xOffset = Math.cos(angle + k * Math.PI / 2) * n.r * 1.8;
+              const yOffset = Math.sin(angle + k * Math.PI / 2) * n.r * 1.8;
+              if (k === 0) ctx.moveTo(n.x + xOffset, n.y + yOffset);
+              else ctx.lineTo(n.x + xOffset, n.y + yOffset);
+            }
+            ctx.closePath();
+            ctx.stroke();
+          } else if (n.specialType === 'organizador') {
+            ctx.strokeStyle = `rgba(34, 211, 238, ${opacity * 0.8})`;
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            const rot = timestamp * -0.0015;
+            for (let k = 0; k < 6; k++) {
+              const xOffset = Math.cos(rot + k * Math.PI / 3) * n.r * 1.6;
+              const yOffset = Math.sin(rot + k * Math.PI / 3) * n.r * 1.6;
+              if (k === 0) ctx.moveTo(n.x + xOffset, n.y + yOffset);
+              else ctx.lineTo(n.x + xOffset, n.y + yOffset);
+            }
+            ctx.closePath();
+            ctx.stroke();
+          }
 
           // Hard Core dot
           ctx.beginPath();
@@ -793,6 +1012,31 @@ export default function App() {
           ctx.strokeStyle = `rgba(${colorTheme.r}, ${colorTheme.g}, ${colorTheme.b}, ${opacity * 0.8})`;
           ctx.lineWidth = 1.0;
           ctx.stroke();
+
+          // Draw Special Type character symbol
+          if (n.specialType && n.specialType !== 'normal') {
+            ctx.fillStyle = `rgba(15, 23, 42, ${opacity * 0.9})`; // dark slate contrasting center
+            ctx.font = 'bold 8px "JetBrains Mono", monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            let sym = '';
+            if (n.specialType === 'influencer') sym = '★';
+            else if (n.specialType === 'disruptor') sym = '⚡';
+            else if (n.specialType === 'organizador') sym = '♦';
+            ctx.fillText(sym, n.x, n.y);
+          }
+        });
+
+        // Render floating score / update labels on canvas
+        floatingTexts.forEach(ft => {
+          ctx.save();
+          ctx.font = 'bold 12px "Space Grotesk", "Inter", sans-serif';
+          ctx.fillStyle = ft.color.replace('opacity', ft.opacity.toFixed(2));
+          ctx.textAlign = 'center';
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
+          ctx.shadowBlur = 4;
+          ctx.fillText(ft.text, ft.x, ft.y);
+          ctx.restore();
         });
 
         // 8. If Resonance is active, draw cinematic violet border vignette overlay
@@ -1094,6 +1338,38 @@ export default function App() {
             </div>
           )}
         </div>
+
+        {/* OBJECTIVE HUD CARD */}
+        {currentObjective && (
+          <div className="mt-2.5 w-full max-w-xs sm:max-w-md bg-slate-950/85 backdrop-blur-md border border-purple-900/40 rounded-xl p-2.5 sm:p-3 flex items-center justify-between gap-3 shadow-xl pointer-events-auto transition-all animate-fade-in">
+            <div className="flex flex-col flex-1 min-w-0 text-left">
+              <span className="text-[9px] font-mono uppercase tracking-widest text-purple-400 font-bold flex items-center gap-1">
+                <Target size={11} className="text-purple-400 animate-pulse shrink-0" /> OBJETIVO DINÁMICO
+              </span>
+              <span className="text-xs sm:text-sm font-bold text-white tracking-tight truncate mt-0.5">
+                {currentObjective.title}
+              </span>
+              <span className="text-[10px] sm:text-xs text-slate-300 leading-tight mt-0.5">
+                {currentObjective.description}
+              </span>
+            </div>
+            
+            {/* Progress countdown bar */}
+            <div className="flex flex-col items-end shrink-0">
+              <span className="text-xs font-mono font-bold text-purple-300">
+                {currentObjective.currentProgress.toFixed(1)}s / {currentObjective.durationToHold.toFixed(0)}s
+              </span>
+              <div className="w-16 sm:w-20 h-1.5 bg-slate-900 rounded-full overflow-hidden mt-1 border border-slate-800">
+                <div 
+                  className={`h-full bg-gradient-to-r from-purple-500 to-indigo-400 transition-all duration-100 ${
+                    currentObjective.currentProgress > 0 ? 'animate-pulse bg-purple-400' : 'bg-purple-600'
+                  }`} 
+                  style={{ width: `${(currentObjective.currentProgress / currentObjective.durationToHold) * 100}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
   
         {/* ACTIVE RANDOM ENVIRONMENTAL THREAT PANEL (Desktop Only) */}
         {!isMobileMode && activeEvent.type !== 'NONE' && (

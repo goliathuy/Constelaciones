@@ -16,6 +16,19 @@ export interface GameNode {
   isGhost: boolean; // True during fade-out state
   ghostProgress?: number; // 1.0 down to 0.0 during fade-out
   colorIndex: number; // For aesthetic grouping or diversity
+  specialType?: 'normal' | 'influencer' | 'disruptor' | 'organizador';
+  isolatedTimer?: number; // Tracks duration of continuous isolation for influencers
+}
+
+export interface DynamicObjective {
+  id: string;
+  title: string;
+  description: string;
+  type: 'MANTENER_COMUNIDADES' | 'MANTENER_SINCRONIA' | 'EVITAR_CONGESTION' | 'EVITAR_AISLAMIENTO' | 'CONECTAR_ESPECIALES';
+  targetValue: number;
+  currentProgress: number; // seconds completed under target
+  durationToHold: number;  // total seconds required to complete
+  status: 'ACTIVE' | 'COMPLETED' | 'FAILED';
 }
 
 export type EventType = 'NONE' | 'EUFORIA' | 'FRAGMENTACION' | 'CORRIENTE';

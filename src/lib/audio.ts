@@ -17,6 +17,8 @@ class AmbientSynth {
   // Active Gravity Anchor Hum State
   private anchorOsc: OscillatorNode | null = null;
   private anchorGain: GainNode | null = null;
+  private anchorOvertoneOsc: OscillatorNode | null = null;
+  private anchorOvertoneGain: GainNode | null = null;
 
   public start() {
     if (this.active) return;
@@ -136,50 +138,103 @@ class AmbientSynth {
   }
 
   /**
-   * Play dynamic Pulse activation SFX
+   * Play dynamic Pulse activation SFX - rewritten for warm, acoustic physical feel
    */
   public playPulseSFX(type: 'attract' | 'repel') {
     if (!this.active || !this.ctx) return;
     try {
       const now = this.ctx.currentTime;
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
 
-      osc.type = type === 'attract' ? 'sine' : 'triangle';
-      
       if (type === 'attract') {
-        // High, cozy rising sound
-        osc.frequency.setValueAtTime(320, now);
-        osc.frequency.exponentialRampToValueAtTime(680, now + 0.35);
-        gain.gain.setValueAtTime(0.12, now);
-        gain.gain.linearRampToValueAtTime(0, now + 0.35);
-      } else {
-        // Warning, descending laser/impact sound
-        osc.frequency.setValueAtTime(550, now);
-        osc.frequency.exponentialRampToValueAtTime(140, now + 0.4);
-        gain.gain.setValueAtTime(0.14, now);
-        gain.gain.linearRampToValueAtTime(0, now + 0.4);
-      }
+        // --- COZY CRYSTAL BELL PLUCK ---
+        // Instead of a sweep, we use dual high-resonance sine wave bell harmonics
+        const osc1 = this.ctx.createOscillator();
+        const osc2 = this.ctx.createOscillator();
+        const gain1 = this.ctx.createGain();
+        const gain2 = this.ctx.createGain();
+        const filter = this.ctx.createBiquadFilter();
 
-      osc.connect(gain);
-      gain.connect(this.ctx.destination);
-      osc.start(now);
-      osc.stop(now + 0.45);
+        // High-pass filter to keep it sparkling and clean
+        filter.type = 'highpass';
+        filter.frequency.setValueAtTime(300, now);
+
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(659.25, now); // E5 (Pure harmonic note)
+        gain1.gain.setValueAtTime(0.06, now);
+        gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(1318.50, now); // E6 (Octave overtone)
+        gain2.gain.setValueAtTime(0.02, now);
+        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+
+        osc1.connect(gain1);
+        osc2.connect(gain2);
+        
+        gain1.connect(filter);
+        gain2.connect(filter);
+        
+        filter.connect(this.ctx.destination);
+
+        osc1.start(now);
+        osc2.start(now);
+        osc1.stop(now + 0.65);
+        osc2.stop(now + 0.3);
+      } else {
+        // --- MUFFLED PHYSICAL AIR THUMP ---
+        // Instead of descending sirens, a low-frequency wooden thump/mallet kick
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        const lowpass = this.ctx.createBiquadFilter();
+
+        lowpass.type = 'lowpass';
+        lowpass.frequency.setValueAtTime(130, now);
+        lowpass.Q.setValueAtTime(1.0, now);
+
+        osc.type = 'sine';
+        // Gentle downward physical sweep mimicking acoustic air displacement
+        osc.frequency.setValueAtTime(105, now);
+        osc.frequency.exponentialRampToValueAtTime(70, now + 0.15);
+
+        gain.gain.setValueAtTime(0.18, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+        osc.connect(gain);
+        gain.connect(lowpass);
+        lowpass.connect(this.ctx.destination);
+
+        osc.start(now);
+        osc.stop(now + 0.22);
+      }
     } catch (e) {
       console.warn('Error playing pulse SFX:', e);
     }
   }
 
   /**
-   * Play heavy wave Resonance sweep SFX
+   * Play heavy wave Resonance sweep SFX - rewritten as a slow-blooming ambient pad chord
    */
   public playResonanceSFX() {
     if (!this.active || !this.ctx) return;
     try {
       const now = this.ctx.currentTime;
       
-      // Celestial chord arpeggio sweep: C4 (261.63), E4 (329.63), G4 (392.00), C5 (523.25)
-      const freqs = [261.63, 329.63, 392.00, 523.25];
+      // Warm Minor 9th / Pentatonic cozy chime chord: 
+      // F4 (349.23), A4 (440.00), C5 (523.25), E5 (659.25), G5 (783.99)
+      const freqs = [349.23, 440.00, 523.25, 659.25, 783.99];
+      
+      const masterResonanceGain = this.ctx.createGain();
+      const resonanceFilter = this.ctx.createBiquadFilter();
+
+      // Sweeping lowpass filter to make it sound "foggy" and cinematic
+      resonanceFilter.type = 'lowpass';
+      resonanceFilter.Q.setValueAtTime(2.0, now);
+      resonanceFilter.frequency.setValueAtTime(700, now);
+      resonanceFilter.frequency.exponentialRampToValueAtTime(220, now + 2.0);
+
+      masterResonanceGain.gain.setValueAtTime(0.12, now);
+      masterResonanceGain.gain.linearRampToValueAtTime(0, now + 2.5);
+
       freqs.forEach((freq, idx) => {
         const osc = this.ctx!.createOscillator();
         const gain = this.ctx!.createGain();
@@ -187,33 +242,37 @@ class AmbientSynth {
         osc.type = 'sine';
         osc.frequency.setValueAtTime(freq, now + idx * 0.08);
         
-        // Gentle vibrato on resonance
+        // Gentle individual pitch vibrato
         const vibrato = this.ctx!.createOscillator();
         const vibratoGain = this.ctx!.createGain();
-        vibrato.frequency.value = 6; // 6Hz frequency
-        vibratoGain.gain.value = 5;  // 5Hz swing
+        vibrato.frequency.value = 4.5; // slow lush vibrato
+        vibratoGain.gain.value = 3;    // gentle width
         vibrato.connect(vibratoGain);
         vibratoGain.connect(osc.frequency);
-        vibrato.start(now);
-        vibrato.stop(now + 1.6);
         
         gain.gain.setValueAtTime(0, now);
-        gain.gain.linearRampToValueAtTime(0.08, now + idx * 0.08 + 0.08);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 1.2 + idx * 0.1);
+        // Staggered attack to make the chord "bloom" beautifully
+        gain.gain.linearRampToValueAtTime(0.04, now + idx * 0.12 + 0.4);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 1.8 + idx * 0.15);
         
         osc.connect(gain);
-        gain.connect(this.ctx!.destination);
+        gain.connect(resonanceFilter);
         
-        osc.start(now + idx * 0.08);
-        osc.stop(now + 1.6);
+        vibrato.start(now);
+        vibrato.stop(now + 2.4);
+        osc.start(now + idx * 0.12);
+        osc.stop(now + 2.5);
       });
+
+      resonanceFilter.connect(masterResonanceGain);
+      masterResonanceGain.connect(this.ctx.destination);
     } catch (e) {
       console.warn('Error playing resonance SFX:', e);
     }
   }
 
   /**
-   * Starts or stops a continuous sub-bass hum while holding the Gravity Anchor
+   * Starts or stops a continuous anchor hum (Deep organic rumble + singing bowl overtone)
    */
   public setAnchorActive(active: boolean) {
     if (!this.active || !this.ctx) return;
@@ -222,40 +281,81 @@ class AmbientSynth {
       if (active) {
         if (this.anchorOsc) return; // already active
 
+        // 1. Core sub-bass rumble
         this.anchorOsc = this.ctx.createOscillator();
         this.anchorGain = this.ctx.createGain();
 
-        // A deep physical sub-bass rumble (85Hz)
         this.anchorOsc.type = 'sine';
-        this.anchorOsc.frequency.setValueAtTime(85, now);
+        this.anchorOsc.frequency.setValueAtTime(85, now); // 85Hz base
 
         this.anchorGain.gain.setValueAtTime(0, now);
-        this.anchorGain.gain.linearRampToValueAtTime(0.06, now + 0.12);
+        this.anchorGain.gain.linearRampToValueAtTime(0.07, now + 0.25);
 
         this.anchorOsc.connect(this.anchorGain);
         this.anchorGain.connect(this.ctx.destination);
-
         this.anchorOsc.start(now);
+
+        // 2. High crystal Singing Bowl overtone
+        this.anchorOvertoneOsc = this.ctx.createOscillator();
+        this.anchorOvertoneGain = this.ctx.createGain();
+
+        this.anchorOvertoneOsc.type = 'sine';
+        this.anchorOvertoneOsc.frequency.setValueAtTime(510, now); // 6th harmonic (pure perfect chime)
+
+        // Shimmering LFO for the overtone tremolo
+        const shimmerLfo = this.ctx.createOscillator();
+        const shimmerGain = this.ctx.createGain();
+        shimmerLfo.frequency.value = 3.5; // 3.5Hz pulse
+        shimmerGain.gain.value = 0.006;   // gentle intensity
+
+        this.anchorOvertoneGain.gain.setValueAtTime(0, now);
+        this.anchorOvertoneGain.gain.linearRampToValueAtTime(0.012, now + 0.4);
+
+        shimmerLfo.connect(shimmerGain);
+        shimmerGain.connect(this.anchorOvertoneGain.gain);
+
+        this.anchorOvertoneOsc.connect(this.anchorOvertoneGain);
+        this.anchorOvertoneGain.connect(this.ctx.destination);
+
+        shimmerLfo.start(now);
+        this.anchorOvertoneOsc.start(now);
       } else {
         if (!this.anchorOsc || !this.anchorGain) return;
 
         const currentOsc = this.anchorOsc;
         const currentGain = this.anchorGain;
+        const currentOvertoneOsc = this.anchorOvertoneOsc;
+        const currentOvertoneGain = this.anchorOvertoneGain;
 
         currentGain.gain.cancelScheduledValues(now);
         currentGain.gain.setValueAtTime(currentGain.gain.value, now);
-        currentGain.gain.linearRampToValueAtTime(0, now + 0.15);
+        currentGain.gain.linearRampToValueAtTime(0, now + 0.2);
+
+        if (currentOvertoneGain) {
+          currentOvertoneGain.gain.cancelScheduledValues(now);
+          currentOvertoneGain.gain.setValueAtTime(currentOvertoneGain.gain.value, now);
+          currentOvertoneGain.gain.linearRampToValueAtTime(0, now + 0.2);
+        }
 
         setTimeout(() => {
           try {
             currentOsc.stop();
             currentOsc.disconnect();
             currentGain.disconnect();
+            if (currentOvertoneOsc) {
+              currentOvertoneOsc.stop();
+              currentOvertoneOsc.disconnect();
+            }
+            if (currentOvertoneGain) {
+              currentOvertoneGain.disconnect();
+            }
           } catch (err) {}
-        }, 180);
+        }, 220);
 
         this.anchorOsc = null;
         this.anchorGain = null;
+        this.anchorOvertoneOsc = null;
+        this.anchorOvertoneGain = null;
       }
     } catch (e) {
       console.warn('Error updating anchor hum:', e);

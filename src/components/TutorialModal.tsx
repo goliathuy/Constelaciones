@@ -86,9 +86,41 @@ export const TutorialModal: React.FC<TutorialModalProps> = ({
 
           <div className="border-t border-slate-800/60 pt-4">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-white mb-2 flex items-center gap-1.5">
+              🎨 Afinidades Sociales y Objetivos Dinámicos:
+            </h3>
+            <p className="text-[11px] text-slate-400 mb-2">
+              Los nodos se dividen en 4 colores de afinidad. La atracción entre la misma afinidad es potente (<span className="text-sky-300">x1.0</span>) pero débil con afinidades ajenas (<span className="text-pink-300">x0.3</span>). Durante eventos de <b>Fragmentación</b>, la atracción interracial cae a <span className="text-red-400">x0.0</span>, formando colonias aisladas de forma orgánica.
+            </p>
+            <p className="text-[11px] text-slate-400 mb-3">
+              Completa los <b>Objetivos Dinámicos</b> en pantalla (mantener un rango o evitar acumulación durante unos segundos) para reclamar recompensas de <b>+500 puntos</b> de sincronía.
+            </p>
+          </div>
+
+          <div className="border-t border-slate-800/60 pt-4">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-white mb-2 flex items-center gap-1.5">
+              🌟 Nodos Especiales:
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]">
+              <div className="bg-slate-950/50 p-2 rounded-lg border border-yellow-500/20">
+                <span className="text-yellow-400 font-bold">★ Influencer</span>
+                <p className="text-[10px] text-slate-400 mt-0.5">Atracción masiva. Si pasa más de 5s aislado de su grupo, el sistema entra en caída libre.</p>
+              </div>
+              <div className="bg-slate-950/50 p-2 rounded-lg border border-red-500/20">
+                <span className="text-red-400 font-bold">⚡ Disruptor</span>
+                <p className="text-[10px] text-slate-400 mt-0.5">Empuja a todos a su alrededor. Ideal para aliviar zonas sobrecargadas.</p>
+              </div>
+              <div className="bg-slate-950/50 p-2 rounded-lg border border-cyan-500/20">
+                <span className="text-cyan-400 font-bold">♦ Organizador</span>
+                <p className="text-[10px] text-slate-400 mt-0.5">Incrementa la estabilidad de conexión del grupo, previniendo dispersiones bruscas.</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-slate-800/60 pt-4">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-white mb-2 flex items-center gap-1.5">
               🛠️ Herramientas de Modulación:
             </h3>
-            <ul className="space-y-2 list-disc list-inside text-slate-400 text-[11px]">
+            <ul className="space-y-1.5 list-disc list-inside text-slate-400 text-[11px]">
               <li>
                 <b className="text-slate-200">Ancla (Mantener Click)</b>: Crea un punto de gravedad temporal para agrupar nodos dispersos.
               </li>
