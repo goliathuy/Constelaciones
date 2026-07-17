@@ -249,6 +249,11 @@ export default function App() {
   const anchorPosRef = useRef<{ x: number; y: number } | null>(null);
   const pulseRef = useRef<{ x: number; y: number; time: number; type: 'attract' | 'repel' } | null>(null);
   const resonanceActiveRef = useRef<boolean>(false);
+  const cameraRef = useRef<{ x: number; y: number; zoom: number }>({
+    x: PHYSICS_CONFIG.WORLD_WIDTH / 2,
+    y: PHYSICS_CONFIG.WORLD_HEIGHT / 2,
+    zoom: 0.4
+  });
   
   // Game timings
   const lastTimeRef = useRef<number>(0);
@@ -296,14 +301,18 @@ export default function App() {
     timeAccumulatorRef.current = 0;
     
     // Create baseline nodes in LOGICAL coordinates (correctly scaled by DPR)
-    const dpr = window.devicePixelRatio || 1;
-    const width = (canvasRef.current && canvasRef.current.width > 0)
-      ? (canvasRef.current.width / dpr)
-      : (containerRef.current?.clientWidth || window.innerWidth || 800);
-    const height = (canvasRef.current && canvasRef.current.height > 0)
-      ? (canvasRef.current.height / dpr)
-      : (containerRef.current?.clientHeight || window.innerHeight || 600);
-    nodesRef.current = generateInitialNodes(isMobileMode ? 25 : PHYSICS_CONFIG.INITIAL_NODES, width, height);
+    nodesRef.current = generateInitialNodes(
+      isMobileMode ? 25 : PHYSICS_CONFIG.INITIAL_NODES,
+      PHYSICS_CONFIG.WORLD_WIDTH,
+      PHYSICS_CONFIG.WORLD_HEIGHT
+    );
+
+    // Reset camera to world center
+    cameraRef.current = {
+      x: PHYSICS_CONFIG.WORLD_WIDTH / 2,
+      y: PHYSICS_CONFIG.WORLD_HEIGHT / 2,
+      zoom: 0.4
+    };
     
     // Clear interactive inputs
     anchorPosRef.current = null;
@@ -421,8 +430,18 @@ export default function App() {
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+
+    const dpr = window.devicePixelRatio || 1;
+    const width = canvas.width / dpr;
+    const height = canvas.height / dpr;
+
+    // Convert screen coordinates to virtual world coordinates
+    const dx = screenX - width / 2;
+    const dy = screenY - height / 2;
+    const x = cameraRef.current.x + dx / cameraRef.current.zoom;
+    const y = cameraRef.current.y + dy / cameraRef.current.zoom;
 
     // Trigger pulse on primary click
     if (pulseCooldownRef.current <= 0) {
@@ -456,8 +475,18 @@ export default function App() {
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+
+    const dpr = window.devicePixelRatio || 1;
+    const width = canvas.width / dpr;
+    const height = canvas.height / dpr;
+
+    // Convert screen coordinates to virtual world coordinates
+    const dx = screenX - width / 2;
+    const dy = screenY - height / 2;
+    const x = cameraRef.current.x + dx / cameraRef.current.zoom;
+    const y = cameraRef.current.y + dy / cameraRef.current.zoom;
 
     anchorPosRef.current = { x, y };
   };
@@ -626,16 +655,16 @@ export default function App() {
             }
           }
 
-          // Generate new node arriving from outer borders
-          const newNode = generateIncomingNode(width, height);
+          // Generate new node arriving from outer borders of the virtual world
+          const newNode = generateIncomingNode(PHYSICS_CONFIG.WORLD_WIDTH, PHYSICS_CONFIG.WORLD_HEIGHT);
           nodesRef.current.push(newNode);
         }
 
-        // 3. Physical calculations updates
+        // 3. Physical calculations updates (using virtual world dimensions)
         nodesRef.current = updatePhysics(
           nodesRef.current,
-          width,
-          height,
+          PHYSICS_CONFIG.WORLD_WIDTH,
+          PHYSICS_CONFIG.WORLD_HEIGHT,
           activeEventRef.current,
           resonanceActiveRef.current,
           anchorPosRef.current,
@@ -787,19 +816,60 @@ export default function App() {
           }
         }
 
-        // 7. CANVAS RENDERING
+        // 7. CAMERA INTERPOLATION LOGIC
+        // Find bounding box of all active nodes to center camera and scale zoom
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minY = Infinity;
+        let maxY = -Infinity;
+
+        const activeNodes = nodesRef.current.filter(n => !n.isGhost);
+        if (activeNodes.length > 0) {
+          activeNodes.forEach(n => {
+            if (n.x < minX) minX = n.x;
+            if (n.x > maxX) maxX = n.x;
+            if (n.y < minY) minY = n.y;
+            if (n.y > maxY) maxY = n.y;
+          });
+
+          const boxWidth = (maxX - minX) || 100;
+          const boxHeight = (maxY - minY) || 100;
+          const centerX = minX + boxWidth / 2;
+          const centerY = minY + boxHeight / 2;
+
+          const pad = 120; // safe padding around viewport
+          const targetZoomX = (width - pad * 2) / boxWidth;
+          const targetZoomY = (height - pad * 2) / boxHeight;
+          let targetZoom = Math.min(targetZoomX, targetZoomY);
+
+          // Clamping keeps zoom range balanced (highly professional look)
+          targetZoom = Math.max(0.35, Math.min(1.0, targetZoom));
+
+          const lerpVal = 0.04; // ultra smooth delay
+          cameraRef.current.x += (centerX - cameraRef.current.x) * lerpVal;
+          cameraRef.current.y += (centerY - cameraRef.current.y) * lerpVal;
+          cameraRef.current.zoom += (targetZoom - cameraRef.current.zoom) * lerpVal;
+        } else {
+          // Centered camera fallback
+          const lerpVal = 0.04;
+          cameraRef.current.x += (PHYSICS_CONFIG.WORLD_WIDTH / 2 - cameraRef.current.x) * lerpVal;
+          cameraRef.current.y += (PHYSICS_CONFIG.WORLD_HEIGHT / 2 - cameraRef.current.y) * lerpVal;
+          cameraRef.current.zoom += (0.4 - cameraRef.current.zoom) * lerpVal;
+        }
+
+        // 7.5. CANVAS RENDERING
         ctx.save();
         ctx.scale(dpr, dpr);
         ctx.clearRect(0, 0, width, height);
 
-        // Draw elegant radial starry background glow
+        // A. Draw screen-space background
         const radialGlow = ctx.createRadialGradient(width / 2, height / 2, 50, width / 2, height / 2, Math.max(width, height) * 0.7);
         radialGlow.addColorStop(0, '#0a1024'); // subtle dark blue center
         radialGlow.addColorStop(1, '#02040a'); // absolute black carbon border
         ctx.fillStyle = radialGlow;
         ctx.fillRect(0, 0, width, height);
 
-        // Render current event background hint glows
+        // Render current event background hint glows in screen-space
         if (activeEventRef.current.type !== 'NONE') {
           ctx.beginPath();
           let eventGlowColor = 'rgba(0, 0, 0, 0)';
@@ -810,6 +880,32 @@ export default function App() {
           ctx.arc(width / 2, height / 2, Math.max(width, height) * 0.4, 0, Math.PI * 2);
           ctx.fill();
         }
+
+        // B. Apply Camera Transforms
+        ctx.save();
+        ctx.translate(width / 2, height / 2);
+        ctx.scale(cameraRef.current.zoom, cameraRef.current.zoom);
+        ctx.translate(-cameraRef.current.x, -cameraRef.current.y);
+
+        // B1. Draw grid lines in virtual space
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.015)';
+        ctx.lineWidth = 1.0;
+        const gridSpacing = 150;
+        ctx.beginPath();
+        for (let gx = 0; gx <= PHYSICS_CONFIG.WORLD_WIDTH; gx += gridSpacing) {
+          ctx.moveTo(gx, 0);
+          ctx.lineTo(gx, PHYSICS_CONFIG.WORLD_HEIGHT);
+        }
+        for (let gy = 0; gy <= PHYSICS_CONFIG.WORLD_HEIGHT; gy += gridSpacing) {
+          ctx.moveTo(0, gy);
+          ctx.lineTo(PHYSICS_CONFIG.WORLD_WIDTH, gy);
+        }
+        ctx.stroke();
+
+        // Draw boundaries
+        ctx.strokeStyle = 'rgba(147, 51, 234, 0.06)';
+        ctx.lineWidth = 2.0;
+        ctx.strokeRect(0, 0, PHYSICS_CONFIG.WORLD_WIDTH, PHYSICS_CONFIG.WORLD_HEIGHT);
 
         // Draw gravity Anchor range indicator
         if (anchorPosRef.current) {
@@ -859,12 +955,23 @@ export default function App() {
 
             const a = rawNodes[i];
             const b = rawNodes[j];
-            const dx = b.x - a.x;
-            const dy = b.y - a.y;
-            const d = Math.hypot(dx, dy);
+            
+            // Check if distance on torus is less than CONNECT_DIST
+            let dx = b.x - a.x;
+            let dy = b.y - a.y;
+            if (dx > PHYSICS_CONFIG.WORLD_WIDTH / 2) dx -= PHYSICS_CONFIG.WORLD_WIDTH;
+            else if (dx < -PHYSICS_CONFIG.WORLD_WIDTH / 2) dx += PHYSICS_CONFIG.WORLD_WIDTH;
+            if (dy > PHYSICS_CONFIG.WORLD_HEIGHT / 2) dy -= PHYSICS_CONFIG.WORLD_HEIGHT;
+            else if (dy < -PHYSICS_CONFIG.WORLD_HEIGHT / 2) dy += PHYSICS_CONFIG.WORLD_HEIGHT;
+            
+            const toroidalD = Math.hypot(dx, dy);
 
-            if (d < PHYSICS_CONFIG.CONNECT_DIST) {
-               const alpha = (1 - (d / PHYSICS_CONFIG.CONNECT_DIST)) * 0.35;
+            // Visual line: only draw if physically within CONNECT_DIST, AND not wrapped around borders
+            // (drawing wrapped lines would stretch them across the screen, so we only draw if screen distance matches)
+            const screenD = Math.hypot(b.x - a.x, b.y - a.y);
+
+            if (toroidalD < PHYSICS_CONFIG.CONNECT_DIST && screenD < PHYSICS_CONFIG.CONNECT_DIST * 1.5) {
+               const alpha = (1 - (toroidalD / PHYSICS_CONFIG.CONNECT_DIST)) * 0.35;
                
                // If both nodes are part of the SAME cluster (groupId matches), draw bright harmonized line
                if (a.groupId !== null && b.groupId !== null && a.groupId === b.groupId) {
@@ -903,7 +1010,14 @@ export default function App() {
           let maxR = 20;
           clusterIndices.forEach(idx => {
             const n = rawNodes[idx];
-            const dist = Math.hypot(n.x - centerX, n.y - centerY);
+            let dx = n.x - centerX;
+            let dy = n.y - centerY;
+            if (dx > PHYSICS_CONFIG.WORLD_WIDTH / 2) dx -= PHYSICS_CONFIG.WORLD_WIDTH;
+            else if (dx < -PHYSICS_CONFIG.WORLD_WIDTH / 2) dx += PHYSICS_CONFIG.WORLD_WIDTH;
+            if (dy > PHYSICS_CONFIG.WORLD_HEIGHT / 2) dy -= PHYSICS_CONFIG.WORLD_HEIGHT;
+            else if (dy < -PHYSICS_CONFIG.WORLD_HEIGHT / 2) dy += PHYSICS_CONFIG.WORLD_HEIGHT;
+            
+            const dist = Math.hypot(dx, dy);
             if (dist > maxR) maxR = dist;
           });
 
@@ -1027,7 +1141,7 @@ export default function App() {
           }
         });
 
-        // Render floating score / update labels on canvas
+        // Render floating score / update labels on canvas (in camera space)
         floatingTexts.forEach(ft => {
           ctx.save();
           ctx.font = 'bold 12px "Space Grotesk", "Inter", sans-serif';
@@ -1039,7 +1153,9 @@ export default function App() {
           ctx.restore();
         });
 
-        // 8. If Resonance is active, draw cinematic violet border vignette overlay
+        ctx.restore(); // Restore camera translation/scale
+
+        // C. Screen-space overlays (vignettes, borders)
         if (resonanceDurationLeftRef.current > 0) {
           const resVignette = ctx.createRadialGradient(
             width / 2, height / 2, Math.max(width, height) * 0.5,
@@ -1055,6 +1171,7 @@ export default function App() {
           ctx.lineWidth = 2.0;
           ctx.strokeRect(5, 5, width - 10, height - 10);
         }
+
         ctx.restore();
       }
 

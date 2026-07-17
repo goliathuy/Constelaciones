@@ -168,16 +168,24 @@ export function updatePhysics(
       const b = nodes[j];
       if (b.isGhost) continue;
 
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
+      let dx = b.x - a.x;
+      let dy = b.y - a.y;
+
+      // Periodic Boundary Conditions (Toroidal distance)
+      if (dx > width / 2) dx -= width;
+      else if (dx < -width / 2) dx += width;
+
+      if (dy > height / 2) dy -= height;
+      else if (dy < -height / 2) dy += height;
+
       const dist = Math.hypot(dx, dy);
 
       if (dist < 0.5) continue;
 
-      // 1. Repulsion force (anti-collision): distance < 22px
+      // 1. Repulsion force (anti-collision): distance < REPULSION_DIST
       if (dist < PHYSICS_CONFIG.REPULSION_DIST) {
-        // Stronger repulsion at extremely close range (< 12px)
-        const closeFactor = dist < 12 ? 2.0 : 1.0;
+        // Stronger repulsion at extremely close range (< 10px)
+        const closeFactor = dist < 10 ? 2.0 : 1.0;
         const force = (PHYSICS_CONFIG.REPULSION_DIST - dist) / PHYSICS_CONFIG.REPULSION_DIST * 0.5 * closeFactor * resonanceMultiplier;
         // Push apart
         fx -= (dx / dist) * force;
@@ -187,24 +195,24 @@ export function updatePhysics(
       }
 
       // 2. Special Node: Disruptor repulsion (if nearby)
-      if (b.specialType === 'disruptor' && dist < 110) {
-        const force = (110 - dist) / 110 * 0.06 * resonanceMultiplier;
+      if (b.specialType === 'disruptor' && dist < 80) {
+        const force = (80 - dist) / 80 * 0.06 * resonanceMultiplier;
         fx -= (dx / dist) * force;
         fy -= (dy / dist) * force;
         a.energy = Math.min(1.0, a.energy + 0.02);
       }
 
       // 3. Special Node: Influencer strong attraction (regardless of affinity)
-      else if (b.specialType === 'influencer' && dist >= 40 && dist <= 190) {
-        const force = (dist - 40) / 150 * baseAttraction * 1.8 * resonanceMultiplier;
+      else if (b.specialType === 'influencer' && dist >= 30 && dist <= 135) {
+        const force = (dist - 30) / 105 * baseAttraction * 1.8 * resonanceMultiplier;
         fx += (dx / dist) * force;
         fy += (dy / dist) * force;
         neighborCount++;
       }
 
       // 4. Special Node: Organizador gentle attraction & stabilization
-      else if (b.specialType === 'organizador' && dist >= 25 && dist <= 140) {
-        const force = (dist - 25) / 115 * baseAttraction * 1.3 * resonanceMultiplier;
+      else if (b.specialType === 'organizador' && dist >= 18 && dist <= 100) {
+        const force = (dist - 18) / 82 * baseAttraction * 1.3 * resonanceMultiplier;
         fx += (dx / dist) * force;
         fy += (dy / dist) * force;
         neighborCount++;
@@ -234,11 +242,11 @@ export function updatePhysics(
       }
 
       // 1.5. Dynamic orbital/swirling force inside clusters to make congestion feel alive
-      if (dist < 70 && dist > 15) {
+      if (dist < 50 && dist > 12) {
         // Perpendicular vector: (-dy, dx)
         // Alternate swirl direction based on colorIndex so they elegantly weave through each other
         const swirlDirection = (a.colorIndex % 2 === 0 ? 1 : -1);
-        const swirlStrength = 0.0075 * (1.0 - (dist / 70)) * resonanceMultiplier;
+        const swirlStrength = 0.0075 * (1.0 - (dist / 50)) * resonanceMultiplier;
         fx += (-dy / dist) * swirlStrength * swirlDirection;
         fy += (dx / dist) * swirlStrength * swirlDirection;
         // Energize slightly from active cluster micro-dynamics
@@ -326,12 +334,18 @@ export function updatePhysics(
     // Decay energy gradually
     a.energy = Math.max(0.1, a.energy - 0.015);
 
-    // Track isolation time for influencers
+    // Track isolation time for influencers with toroidal math
     if (a.specialType === 'influencer') {
       let isIsolated = true;
       for (let j = 0; j < nodes.length; j++) {
         if (nodes[j].id === a.id || nodes[j].isGhost) continue;
-        const dist = Math.hypot(nodes[j].x - a.x, nodes[j].y - a.y);
+        let dx = nodes[j].x - a.x;
+        let dy = nodes[j].y - a.y;
+        if (dx > width / 2) dx -= width;
+        else if (dx < -width / 2) dx += width;
+        if (dy > height / 2) dy -= height;
+        else if (dy < -height / 2) dy += height;
+        const dist = Math.hypot(dx, dy);
         if (dist < PHYSICS_CONFIG.CONNECT_DIST) {
           isIsolated = false;
           break;
@@ -345,22 +359,17 @@ export function updatePhysics(
       }
     }
 
-    // Wall bounces with soft restitution
-    const bouncePadding = 12;
-    if (a.x < bouncePadding) {
-      a.x = bouncePadding;
-      a.vx = Math.abs(a.vx) * 0.6;
-    } else if (a.x > width - bouncePadding) {
-      a.x = width - bouncePadding;
-      a.vx = -Math.abs(a.vx) * 0.6;
+    // Toroidal Pac-Man wrap-around boundaries
+    if (a.x < 0) {
+      a.x += width;
+    } else if (a.x > width) {
+      a.x -= width;
     }
 
-    if (a.y < bouncePadding) {
-      a.y = bouncePadding;
-      a.vy = Math.abs(a.vy) * 0.6;
-    } else if (a.y > height - bouncePadding) {
-      a.y = height - bouncePadding;
-      a.vy = -Math.abs(a.vy) * 0.6;
+    if (a.y < 0) {
+      a.y += height;
+    } else if (a.y > height) {
+      a.y -= height;
     }
   }
 
@@ -405,7 +414,20 @@ export function calculateGameMetrics(nodes: GameNode[]): { metrics: GameMetrics;
     const a = activeNodes[i];
     for (let j = i + 1; j < nLen; j++) {
       const b = activeNodes[j];
-      const dist = Math.hypot(b.x - a.x, b.y - a.y);
+      
+      let dx = b.x - a.x;
+      let dy = b.y - a.y;
+
+      const width = PHYSICS_CONFIG.WORLD_WIDTH;
+      const height = PHYSICS_CONFIG.WORLD_HEIGHT;
+
+      if (dx > width / 2) dx -= width;
+      else if (dx < -width / 2) dx += width;
+
+      if (dy > height / 2) dy -= height;
+      else if (dy < -height / 2) dy += height;
+
+      const dist = Math.hypot(dx, dy);
 
       // Repulsion invasion threshold (22px)
       if (dist < PHYSICS_CONFIG.REPULSION_DIST) {

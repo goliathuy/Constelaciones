@@ -63,9 +63,11 @@ export enum SystemZone {
 export const PHYSICS_CONFIG = {
   INITIAL_NODES: 50,
   MAX_NODES: 120,
-  CONNECT_DIST: 140, // Render line distance
-  ATTRACT_DIST_MIN: 70, // Social gravity start
-  ATTRACT_DIST_MAX: 120, // Social gravity end
-  REPULSION_DIST: 22, // Anti-collision distance
+  CONNECT_DIST: 100, // Reduced from 140
+  ATTRACT_DIST_MIN: 50, // Reduced from 70
+  ATTRACT_DIST_MAX: 90, // Reduced from 120
+  REPULSION_DIST: 18, // Reduced from 22
   SPAWN_INTERVAL: 6.0, // Seconds between node spawns
+  WORLD_WIDTH: 2400, // Virtual map width
+  WORLD_HEIGHT: 2400, // Virtual map height
 };
