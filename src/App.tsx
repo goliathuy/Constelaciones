@@ -121,6 +121,7 @@ export default function App() {
   const [pulseCooldown, setPulseCooldown] = useState<number>(0); // seconds left
   const [resonanceCooldown, setResonanceCooldown] = useState<number>(0); // seconds left
   const [resonanceDurationLeft, setResonanceDurationLeft] = useState<number>(0); // seconds active
+  const [graceTimer, setGraceTimer] = useState<number>(15.0); // 15s initial immunity/grace period
   
   // Interaction Settings
   const [interactionMode, setInteractionMode] = useState<'attract' | 'repel'>('repel');
@@ -276,6 +277,7 @@ export default function App() {
   const spawnTimerRef = useRef<number>(0);
   const eventChangeTimerRef = useRef<number>(0);
   const criticalTimerRef = useRef<number | null>(null); // holds interval timestamp
+  const graceTimerRef = useRef<number>(15.0);
   
   // Ripple animation rings for visual feedback on Pulse/Anchor
   const ripplesRef = useRef<Array<{ x: number; y: number; r: number; maxR: number; opacity: number; color: string }>>([]);
@@ -318,6 +320,8 @@ export default function App() {
     resonanceCooldownRef.current = 0;
     resonanceDurationLeftRef.current = 0;
     timeAccumulatorRef.current = 0;
+    setGraceTimer(15.0);
+    graceTimerRef.current = 15.0;
     
     // Create baseline nodes in LOGICAL coordinates (correctly scaled by DPR)
     nodesRef.current = generateInitialNodes(
@@ -388,7 +392,7 @@ export default function App() {
       x,
       y,
       r: 10,
-      maxR: 120,
+      maxR: 250,
       opacity: 0.8,
       color: ringColor
     });
@@ -399,7 +403,7 @@ export default function App() {
         x,
         y,
         r: 5,
-        maxR: 80,
+        maxR: 180,
         opacity: 0.6,
         color: ringColor
       });
@@ -481,7 +485,7 @@ export default function App() {
       x,
       y,
       r: 20,
-      maxR: 180,
+      maxR: 400,
       opacity: 0.4,
       color: 'rgba(56, 189, 248, 0.2)'
     });
@@ -550,6 +554,12 @@ export default function App() {
         const dpr = window.devicePixelRatio || 1;
         const width = canvas.width / dpr;
         const height = canvas.height / dpr;
+
+        // Decrease grace timer continuously
+        if (graceTimerRef.current > 0) {
+          graceTimerRef.current = Math.max(0, graceTimerRef.current - dt);
+          setGraceTimer(graceTimerRef.current);
+        }
 
         // Unified clock tick logic synchronized directly to requestAnimationFrame
         // Updates state precisely 10 times per second (every 100ms) using delta accumulation
@@ -782,13 +792,15 @@ export default function App() {
         const inCriticalZone = nextMetrics.health < 15 || nextMetrics.health > 85;
 
         if (inCriticalZone) {
-          setCriticalSecondsLeft(prev => {
-            const nextVal = Math.max(0, prev - dt);
-            if (nextVal <= 0) {
-              setIsGameOver(true);
-            }
-            return nextVal;
-          });
+          if (graceTimerRef.current <= 0) {
+            setCriticalSecondsLeft(prev => {
+              const nextVal = Math.max(0, prev - dt);
+              if (nextVal <= 0) {
+                setIsGameOver(true);
+              }
+              return nextVal;
+            });
+          }
         } else {
           // Reset countdown timer when restored to safety
           setCriticalSecondsLeft(10.0);
@@ -1227,20 +1239,20 @@ export default function App() {
           ctx.strokeStyle = 'rgba(56, 189, 248, 0.08)';
           ctx.lineWidth = 1.5;
           ctx.setLineDash([5, 5]);
-          ctx.arc(anchorPosRef.current.x, anchorPosRef.current.y, 180, 0, Math.PI * 2);
+          ctx.arc(anchorPosRef.current.x, anchorPosRef.current.y, 400, 0, Math.PI * 2);
           ctx.stroke();
           ctx.setLineDash([]); // reset
 
           // soft inner magnetic aura
           const aura = ctx.createRadialGradient(
             anchorPosRef.current.x, anchorPosRef.current.y, 5,
-            anchorPosRef.current.x, anchorPosRef.current.y, 180
+            anchorPosRef.current.x, anchorPosRef.current.y, 400
           );
           aura.addColorStop(0, 'rgba(14, 165, 233, 0.06)');
           aura.addColorStop(1, 'rgba(14, 165, 233, 0)');
           ctx.fillStyle = aura;
           ctx.beginPath();
-          ctx.arc(anchorPosRef.current.x, anchorPosRef.current.y, 180, 0, Math.PI * 2);
+          ctx.arc(anchorPosRef.current.x, anchorPosRef.current.y, 400, 0, Math.PI * 2);
           ctx.fill();
         }
 
@@ -1883,14 +1895,23 @@ export default function App() {
             </div>
           </div>
           
-          {/* Critical Timer Alarm Countdowns */}
-          {(metrics.health < 15 || metrics.health > 85) && (
-            <div className="mt-2 bg-red-950/85 border border-red-500/30 rounded-lg px-2.5 py-1 text-center flex items-center gap-1.5 animate-pulse pointer-events-none">
-              <Activity size={10} className="text-red-500" />
-              <span className="text-[10px] sm:text-xs font-mono uppercase tracking-widest text-red-200">
-                COLAPSO: <b className="text-white">{criticalSecondsLeft.toFixed(1)}s</b>
+          {/* Critical Timer Alarm Countdowns or Grace Period Stabilization */}
+          {graceTimer > 0 ? (
+            <div className="mt-2 bg-sky-950/85 border border-sky-500/30 rounded-lg px-2.5 py-1 text-center flex items-center gap-1.5 animate-pulse pointer-events-none">
+              <Activity size={10} className="text-sky-400" />
+              <span className="text-[10px] sm:text-xs font-mono uppercase tracking-widest text-sky-200">
+                ESTABILIZANDO RED (Inmune): <b className="text-white">{graceTimer.toFixed(1)}s</b>
               </span>
             </div>
+          ) : (
+            (metrics.health < 15 || metrics.health > 85) && (
+              <div className="mt-2 bg-red-950/85 border border-red-500/30 rounded-lg px-2.5 py-1 text-center flex items-center gap-1.5 animate-pulse pointer-events-none">
+                <Activity size={10} className="text-red-500" />
+                <span className="text-[10px] sm:text-xs font-mono uppercase tracking-widest text-red-200">
+                  COLAPSO: <b className="text-white">{criticalSecondsLeft.toFixed(1)}s</b>
+                </span>
+              </div>
+            )
           )}
   
           {/* Connection Score Gate Warning if connectivity < 20 */}

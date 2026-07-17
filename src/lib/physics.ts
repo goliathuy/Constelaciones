@@ -135,13 +135,22 @@ export function generateIncomingNode(
 // Generate the initial batch of nodes inside the bounds (all normal initially for learning phase)
 export function generateInitialNodes(count: number, width: number, height: number): GameNode[] {
   const nodes: GameNode[] = [];
+  const centerX = width / 2;
+  const centerY = height / 2;
+  
   for (let i = 0; i < count; i++) {
     const size = 4 + Math.random() * 4;
 
+    // Group initial nodes in a cluster of 400px radius at the center of the virtual world
+    const angle = Math.random() * Math.PI * 2;
+    const distance = Math.sqrt(Math.random()) * 400; // Uniform distribution in a 400px radius circle
+    const x = centerX + Math.cos(angle) * distance;
+    const y = centerY + Math.sin(angle) * distance;
+
     nodes.push({
       id: Math.random().toString(36).substring(2, 9),
-      x: 50 + Math.random() * (width - 100),
-      y: 50 + Math.random() * (height - 100),
+      x,
+      y,
       vx: (Math.random() - 0.5) * 1.2,
       vy: (Math.random() - 0.5) * 1.2,
       r: size,
@@ -325,14 +334,14 @@ export function updatePhysics(
     fy += Math.cos(timeSec * wobbleFreq + phase) * wobbleAmt;
 
     // 3. User interaction - Ancla (Hold): temporary gravitational center (black hole)
-    // Radius 180px. Sin cooldown, activo mientras se pulsa.
+    // Radius 400px. Sin cooldown, activo mientras se pulsa.
     if (userAnchor) {
       const dx = userAnchor.x - a.x;
       const dy = userAnchor.y - a.y;
       const dist = Math.hypot(dx, dy);
-      if (dist < 180 && dist > 2) {
+      if (dist < 400 && dist > 2) {
         // Stronger gravity pull towards anchor
-        const force = (180 - dist) / 180 * 0.12;
+        const force = (400 - dist) / 400 * 0.15;
         fx += (dx / dist) * force;
         fy += (dy / dist) * force;
         a.energy = Math.min(1.0, a.energy + 0.03);
@@ -340,7 +349,7 @@ export function updatePhysics(
     }
 
     // 4. User interaction - Pulso (Click/Tap): instantaneous shockwave
-    // Radius 120px. Pulls or repels based on pulse type!
+    // Radius 250px. Pulls or repels based on pulse type!
     if (userPulse) {
       const elapsed = now - userPulse.time;
       if (elapsed < 300) { // pulse lasts 300ms
@@ -348,10 +357,10 @@ export function updatePhysics(
         const dy = a.y - userPulse.y;
         const dist = Math.hypot(dx, dy);
         
-        if (dist < 120 && dist > 5) {
+        if (dist < 250 && dist > 5) {
           // Calculate propagation wave effect
           const pct = 1.0 - (elapsed / 300);
-          const force = (120 - dist) / 120 * 1.5 * pct;
+          const force = (250 - dist) / 250 * 2.2 * pct;
           
           if (userPulse.type === 'repel') {
             // Push away
