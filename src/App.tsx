@@ -20,7 +20,8 @@ import {
   TrendingUp,
   Award,
   Cpu,
-  Smartphone
+  Smartphone,
+  Radio
 } from 'lucide-react';
 import { 
   GameNode, 
@@ -108,6 +109,7 @@ export default function App() {
   
   // Interaction Settings
   const [interactionMode, setInteractionMode] = useState<'attract' | 'repel'>('repel');
+  const [isHolding, setIsHolding] = useState<boolean>(false);
 
   // Active Environmental Event State
   const [activeEvent, setActiveEvent] = useState<GameEvent>({
@@ -257,6 +259,11 @@ export default function App() {
       type: interactionModeRef.current
     };
 
+    // Play sound if active
+    if (audioActiveRef.current) {
+      ambientSynth.playPulseSFX(interactionModeRef.current);
+    }
+
     // Add glowing wave visual ripples
     const ringColor = interactionModeRef.current === 'attract' ? 'rgba(56, 189, 248, 0.5)' : 'rgba(239, 68, 68, 0.5)';
     ripplesRef.current.push({
@@ -292,6 +299,11 @@ export default function App() {
     resonanceActiveRef.current = true;
     resonanceDurationLeftRef.current = 5.0;
     setResonanceDurationLeft(5.0); // Active for 5s
+
+    // Play resonance SFX if active
+    if (audioActiveRef.current) {
+      ambientSynth.playResonanceSFX();
+    }
     
     // Add multiple visual shock ripples
     const width = canvasRef.current?.width || window.innerWidth;
@@ -330,6 +342,11 @@ export default function App() {
 
     // Set position of gravity Anchor
     anchorPosRef.current = { x, y };
+    setIsHolding(true);
+
+    if (audioActiveRef.current) {
+      ambientSynth.setAnchorActive(true);
+    }
 
     // Set visual Anchor ring feedback
     ripplesRef.current.push({
@@ -359,6 +376,11 @@ export default function App() {
   // Releases Gravity Anchor hold
   const handleCanvasPointerUp = () => {
     anchorPosRef.current = null;
+    setIsHolding(false);
+
+    if (audioActiveRef.current) {
+      ambientSynth.setAnchorActive(false);
+    }
   };
 
   // Handles Spacebar trigger for Resonance
@@ -918,7 +940,7 @@ export default function App() {
       />
 
       {/* HUD HEADER PANEL (Score, HighScore, Audio, and Info Trigger) */}
-      <header className="absolute top-0 inset-x-0 px-4 sm:px-6 safe-pt flex justify-between items-start pointer-events-none z-10">
+      <header className={`absolute top-0 inset-x-0 px-4 sm:px-6 safe-pt flex justify-between items-start pointer-events-none z-10 transition-all duration-300 ${isHolding ? 'opacity-20' : 'opacity-100'}`}>
         
         {/* Score & Stats Card */}
         <div className="bg-slate-950/75 backdrop-blur-md border border-slate-800 rounded-xl px-2.5 py-1.5 sm:px-4 sm:py-3 pointer-events-auto flex gap-2.5 sm:gap-6 items-center shadow-lg">
@@ -984,10 +1006,10 @@ export default function App() {
       </header>
 
       {/* CENTRALIZED DYNAMIC EQUILIBRIO ZONE HUD PANEL */}
-      <div className="absolute top-[calc(5.5rem+env(safe-area-inset-top,0px))] sm:top-28 inset-x-0 flex flex-col items-center pointer-events-none z-10 px-4">
+      <div className={`absolute top-[calc(5.5rem+env(safe-area-inset-top,0px))] sm:top-28 inset-x-0 flex flex-col items-center pointer-events-none z-10 px-4 transition-all duration-300 ${isHolding ? 'opacity-20 scale-95' : 'opacity-100 scale-100'}`}>
         
         {/* Main Zone Banner Gauge */}
-        <div className={`transition-all duration-300 w-full max-w-xs sm:max-w-md bg-slate-950/80 backdrop-blur-md border rounded-2xl p-2 sm:p-4 flex flex-col shadow-2xl items-center text-center pointer-events-none ${zoneDetails.bgColor} ${zoneDetails.glow}`}>
+        <div className={`transition-all duration-300 w-full max-w-xs sm:max-w-md bg-slate-950/60 backdrop-blur-md border rounded-2xl p-2 sm:p-4 flex flex-col shadow-2xl items-center text-center pointer-events-none ${zoneDetails.bgColor} ${zoneDetails.glow}`}>
           
           <div className="flex items-center gap-1.5 mb-0.5 sm:mb-1">
             <span className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-current ${activeZone === SystemZone.EQUILIBRIO ? 'animate-ping' : ''} ${zoneDetails.textColor}`} />
@@ -1003,7 +1025,7 @@ export default function App() {
           )}
   
           {/* Core Equilibrium Slider / Gauge */}
-          <div className="w-full mt-1.5 sm:mt-3.5 relative flex flex-col">
+          <div className="w-full mt-1.5 sm:mt-3 relative flex flex-col">
             
             {/* Visual Health slider line */}
             <div className="h-1 sm:h-1.5 w-full bg-slate-900 rounded-full overflow-visible relative">
@@ -1027,14 +1049,30 @@ export default function App() {
               </div>
             </div>
   
-            {/* Zone Markers / Labels (Hidden on Mobile) */}
-            {!isMobileMode && (
-              <div className="flex justify-between text-[10px] sm:text-xs font-mono uppercase tracking-wider text-slate-500 mt-2 px-1">
-                <span>AISLAMIENTO (0)</span>
-                <span className="text-emerald-500/80">ZONA SALUDABLE (50)</span>
-                <span>SATURACIÓN (100)</span>
-              </div>
-            )}
+            {/* Zone Markers / Labels (Visible on both Mobile and Desktop with highly intuitive alignment highlights) */}
+            <div className="flex justify-between text-[8px] sm:text-[11px] font-mono uppercase tracking-wider mt-1.5 px-0.5">
+              <span className={`transition-all duration-300 ${
+                metrics.health < 35 
+                  ? 'text-sky-400 font-bold drop-shadow-[0_0_8px_rgba(56,189,248,0.6)] scale-105' 
+                  : 'text-slate-500/80'
+              }`}>
+                Aislamiento
+              </span>
+              <span className={`transition-all duration-300 ${
+                metrics.health >= 35 && metrics.health <= 65 
+                  ? 'text-emerald-400 font-bold drop-shadow-[0_0_8px_rgba(52,211,153,0.6)] scale-105' 
+                  : 'text-slate-500/80'
+              }`}>
+                Equilibrio
+              </span>
+              <span className={`transition-all duration-300 ${
+                metrics.health > 65 
+                  ? 'text-rose-500 font-bold drop-shadow-[0_0_8px_rgba(244,63,94,0.6)] scale-105' 
+                  : 'text-slate-500/80'
+              }`}>
+                Congestión
+              </span>
+            </div>
           </div>
           
           {/* Critical Timer Alarm Countdowns */}
@@ -1093,7 +1131,7 @@ export default function App() {
       {/* BOTTOM CONTROL ACTIONS / UTILITY FOOTER DOCK */}
       {isMobileMode ? (
         /* MOBILE HUD: Ergonomic split controls for thumb play */
-        <div className="absolute bottom-0 inset-x-0 p-4 safe-pb pointer-events-none z-10 flex justify-between items-end">
+        <div className={`absolute bottom-0 inset-x-0 p-4 safe-pb pointer-events-none z-10 flex justify-between items-end transition-all duration-300 ${isHolding ? 'opacity-20 pointer-events-none' : 'opacity-100'}`}>
           
           {/* Bottom Left: Repel / Attract Pill */}
           <div className="pointer-events-auto bg-slate-950/85 backdrop-blur-md border border-slate-800 rounded-xl p-1 flex gap-1 shadow-lg">
@@ -1146,7 +1184,7 @@ export default function App() {
               }`}
               title="Resonancia: Duplica fuerzas temporalmente"
             >
-              <Sparkles size={18} className={resonanceDurationLeft > 0 ? 'animate-spin' : ''} style={{ animationDuration: '3s' }} />
+              <Radio size={18} className={resonanceDurationLeft > 0 ? 'animate-pulse' : ''} />
               {resonanceDurationLeft > 0 ? (
                 <span className="text-[9px] font-mono font-bold mt-0.5 text-purple-200">
                   {resonanceDurationLeft.toFixed(0)}s
@@ -1156,8 +1194,8 @@ export default function App() {
                   {resonanceCooldown.toFixed(0)}s
                 </span>
               ) : (
-                <span className="text-[8px] font-mono font-medium tracking-tighter uppercase mt-0.5 opacity-80">
-                  RESO
+                <span className="text-[7px] font-mono font-bold tracking-tighter uppercase mt-0.5 opacity-85">
+                  RESONAR
                 </span>
               )}
             </button>
@@ -1172,7 +1210,7 @@ export default function App() {
         </div>
       ) : (
         /* DESKTOP HUD: Sleek centralized control dock */
-        <footer className="absolute bottom-0 inset-x-0 px-4 sm:px-6 safe-pb pointer-events-none z-10 flex flex-col items-center">
+        <footer className={`absolute bottom-0 inset-x-0 px-4 sm:px-6 safe-pb pointer-events-none z-10 flex flex-col items-center transition-all duration-300 ${isHolding ? 'opacity-20' : 'opacity-100'}`}>
           
           {/* Interaction controls HUD bar */}
           <div className="flex flex-col sm:flex-row gap-2.5 sm:gap-3 pointer-events-auto bg-slate-950/80 backdrop-blur-lg border border-slate-800 rounded-2xl p-2.5 sm:p-3 shadow-2xl items-center max-w-lg w-full">
@@ -1233,13 +1271,13 @@ export default function App() {
                 }`}
                 title="Resonancia: Duplica las fuerzas temporalmente (Espacio)"
               >
-                <Sparkles size={14} className={resonanceDurationLeft > 0 ? 'animate-spin' : ''} />
-                <span className="text-xs font-medium tracking-wide">
+                <Radio size={14} className={resonanceDurationLeft > 0 ? 'animate-pulse' : ''} />
+                <span className="text-xs font-medium tracking-wide uppercase">
                   {resonanceDurationLeft > 0 
-                    ? `ACTIVA (${resonanceDurationLeft.toFixed(1)}s)` 
+                    ? `RESONANDO (${resonanceDurationLeft.toFixed(1)}s)` 
                     : resonanceCooldown > 0 
-                      ? `Resonancia (${resonanceCooldown.toFixed(1)}s)`
-                      : 'Resonancia [Espacio]'}
+                      ? `RESONAR (${resonanceCooldown.toFixed(1)}s)`
+                      : 'RESONAR [Espacio]'}
                 </span>
               </button>
             </div>

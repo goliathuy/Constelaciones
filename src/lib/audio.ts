@@ -14,6 +14,10 @@ class AmbientSynth {
   private lfoGain: GainNode | null = null;
   private active: boolean = false;
 
+  // Active Gravity Anchor Hum State
+  private anchorOsc: OscillatorNode | null = null;
+  private anchorGain: GainNode | null = null;
+
   public start() {
     if (this.active) return;
     try {
@@ -131,7 +135,137 @@ class AmbientSynth {
     this.oscFifth.frequency.exponentialRampToValueAtTime(targetFifthFreq, t + 1.2);
   }
 
+  /**
+   * Play dynamic Pulse activation SFX
+   */
+  public playPulseSFX(type: 'attract' | 'repel') {
+    if (!this.active || !this.ctx) return;
+    try {
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = type === 'attract' ? 'sine' : 'triangle';
+      
+      if (type === 'attract') {
+        // High, cozy rising sound
+        osc.frequency.setValueAtTime(320, now);
+        osc.frequency.exponentialRampToValueAtTime(680, now + 0.35);
+        gain.gain.setValueAtTime(0.12, now);
+        gain.gain.linearRampToValueAtTime(0, now + 0.35);
+      } else {
+        // Warning, descending laser/impact sound
+        osc.frequency.setValueAtTime(550, now);
+        osc.frequency.exponentialRampToValueAtTime(140, now + 0.4);
+        gain.gain.setValueAtTime(0.14, now);
+        gain.gain.linearRampToValueAtTime(0, now + 0.4);
+      }
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.45);
+    } catch (e) {
+      console.warn('Error playing pulse SFX:', e);
+    }
+  }
+
+  /**
+   * Play heavy wave Resonance sweep SFX
+   */
+  public playResonanceSFX() {
+    if (!this.active || !this.ctx) return;
+    try {
+      const now = this.ctx.currentTime;
+      
+      // Celestial chord arpeggio sweep: C4 (261.63), E4 (329.63), G4 (392.00), C5 (523.25)
+      const freqs = [261.63, 329.63, 392.00, 523.25];
+      freqs.forEach((freq, idx) => {
+        const osc = this.ctx!.createOscillator();
+        const gain = this.ctx!.createGain();
+        
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + idx * 0.08);
+        
+        // Gentle vibrato on resonance
+        const vibrato = this.ctx!.createOscillator();
+        const vibratoGain = this.ctx!.createGain();
+        vibrato.frequency.value = 6; // 6Hz frequency
+        vibratoGain.gain.value = 5;  // 5Hz swing
+        vibrato.connect(vibratoGain);
+        vibratoGain.connect(osc.frequency);
+        vibrato.start(now);
+        vibrato.stop(now + 1.6);
+        
+        gain.gain.setValueAtTime(0, now);
+        gain.gain.linearRampToValueAtTime(0.08, now + idx * 0.08 + 0.08);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 1.2 + idx * 0.1);
+        
+        osc.connect(gain);
+        gain.connect(this.ctx!.destination);
+        
+        osc.start(now + idx * 0.08);
+        osc.stop(now + 1.6);
+      });
+    } catch (e) {
+      console.warn('Error playing resonance SFX:', e);
+    }
+  }
+
+  /**
+   * Starts or stops a continuous sub-bass hum while holding the Gravity Anchor
+   */
+  public setAnchorActive(active: boolean) {
+    if (!this.active || !this.ctx) return;
+    try {
+      const now = this.ctx.currentTime;
+      if (active) {
+        if (this.anchorOsc) return; // already active
+
+        this.anchorOsc = this.ctx.createOscillator();
+        this.anchorGain = this.ctx.createGain();
+
+        // A deep physical sub-bass rumble (85Hz)
+        this.anchorOsc.type = 'sine';
+        this.anchorOsc.frequency.setValueAtTime(85, now);
+
+        this.anchorGain.gain.setValueAtTime(0, now);
+        this.anchorGain.gain.linearRampToValueAtTime(0.06, now + 0.12);
+
+        this.anchorOsc.connect(this.anchorGain);
+        this.anchorGain.connect(this.ctx.destination);
+
+        this.anchorOsc.start(now);
+      } else {
+        if (!this.anchorOsc || !this.anchorGain) return;
+
+        const currentOsc = this.anchorOsc;
+        const currentGain = this.anchorGain;
+
+        currentGain.gain.cancelScheduledValues(now);
+        currentGain.gain.setValueAtTime(currentGain.gain.value, now);
+        currentGain.gain.linearRampToValueAtTime(0, now + 0.15);
+
+        setTimeout(() => {
+          try {
+            currentOsc.stop();
+            currentOsc.disconnect();
+            currentGain.disconnect();
+          } catch (err) {}
+        }, 180);
+
+        this.anchorOsc = null;
+        this.anchorGain = null;
+      }
+    } catch (e) {
+      console.warn('Error updating anchor hum:', e);
+    }
+  }
+
   public stop() {
+    // Release active hums
+    this.setAnchorActive(false);
+
     if (!this.active || !this.ctx || !this.masterGain) return;
 
     try {

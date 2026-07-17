@@ -144,22 +144,45 @@ export function updatePhysics(
 
       // 1. Repulsion force (anti-collision): distance < 22px
       if (dist < PHYSICS_CONFIG.REPULSION_DIST) {
-        const force = (PHYSICS_CONFIG.REPULSION_DIST - dist) / PHYSICS_CONFIG.REPULSION_DIST * 0.45 * resonanceMultiplier;
+        // Stronger repulsion at extremely close range (< 12px)
+        const closeFactor = dist < 12 ? 2.0 : 1.0;
+        const force = (PHYSICS_CONFIG.REPULSION_DIST - dist) / PHYSICS_CONFIG.REPULSION_DIST * 0.5 * closeFactor * resonanceMultiplier;
         // Push apart
         fx -= (dx / dist) * force;
         fy -= (dy / dist) * force;
-        a.energy = Math.min(1.0, a.energy + 0.08); // energize on collision
+        a.energy = Math.min(1.0, a.energy + 0.1); // energize on collision
         neighborCount++;
       }
       // 2. Attraction force (social gravity): distance between 70px and 120px
       else if (dist >= PHYSICS_CONFIG.ATTRACT_DIST_MIN && dist <= PHYSICS_CONFIG.ATTRACT_DIST_MAX) {
-        // Linear ramp attraction: gets slightly stronger as they separate, or just constant force
+        // Linear ramp attraction: gets slightly stronger as they separate
         const force = (dist - PHYSICS_CONFIG.ATTRACT_DIST_MIN) / (PHYSICS_CONFIG.ATTRACT_DIST_MAX - PHYSICS_CONFIG.ATTRACT_DIST_MIN) * baseAttraction * resonanceMultiplier;
         fx += (dx / dist) * force;
         fy += (dy / dist) * force;
         neighborCount++;
       }
+
+      // 1.5. Dynamic orbital/swirling force inside clusters to make congestion feel alive
+      if (dist < 70 && dist > 15) {
+        // Perpendicular vector: (-dy, dx)
+        // Alternate swirl direction based on colorIndex so they elegantly weave through each other
+        const swirlDirection = (a.colorIndex % 2 === 0 ? 1 : -1);
+        const swirlStrength = 0.0075 * (1.0 - (dist / 70)) * resonanceMultiplier;
+        fx += (-dy / dist) * swirlStrength * swirlDirection;
+        fy += (dx / dist) * swirlStrength * swirlDirection;
+        // Energize slightly from active cluster micro-dynamics
+        a.energy = Math.min(1.0, a.energy + 0.01);
+      }
     }
+
+    // Add a gentle, natural breathing oscillation (wobble) to all nodes
+    const timeSec = now * 0.001;
+    const phase = (a.lifetime % 10000) / 1000 * Math.PI * 2;
+    const wobbleFreq = 1.0 + (a.colorIndex * 0.15);
+    // High energy nodes (under collision/congestion) vibrate with higher speed and intensity
+    const wobbleAmt = 0.015 * (1.0 + a.energy * 2.5);
+    fx += Math.sin(timeSec * wobbleFreq + phase) * wobbleAmt;
+    fy += Math.cos(timeSec * wobbleFreq + phase) * wobbleAmt;
 
     // 3. User interaction - Ancla (Hold): temporary gravitational center (black hole)
     // Radius 180px. Sin cooldown, activo mientras se pulsa.
