@@ -382,8 +382,9 @@ export default function App() {
       const ctx = canvas?.getContext('2d');
 
       if (canvas && ctx && isPlaying && !isGameOver) {
-        const width = canvas.width;
-        const height = canvas.height;
+        const dpr = window.devicePixelRatio || 1;
+        const width = canvas.width / dpr;
+        const height = canvas.height / dpr;
 
         // Unified clock tick logic synchronized directly to requestAnimationFrame
         // Updates state precisely 10 times per second (every 100ms) using delta accumulation
@@ -584,6 +585,8 @@ export default function App() {
         }
 
         // 7. CANVAS RENDERING
+        ctx.save();
+        ctx.scale(dpr, dpr);
         ctx.clearRect(0, 0, width, height);
 
         // Draw elegant radial starry background glow
@@ -781,6 +784,7 @@ export default function App() {
           ctx.lineWidth = 2.0;
           ctx.strokeRect(5, 5, width - 10, height - 10);
         }
+        ctx.restore();
       }
 
       animationFrameId = requestAnimationFrame(tick);
@@ -799,8 +803,17 @@ export default function App() {
       const canvas = canvasRef.current;
       const container = containerRef.current;
       if (canvas && container) {
-        canvas.width = container.clientWidth;
-        canvas.height = container.clientHeight;
+        const dpr = window.devicePixelRatio || 1;
+        const w = container.clientWidth;
+        const h = container.clientHeight;
+        canvas.width = w * dpr;
+        canvas.height = h * dpr;
+        canvas.style.width = `${w}px`;
+        canvas.style.height = `${h}px`;
+
+        // Update isMobileMode dynamically on window resize or rotation
+        const touch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        setIsMobileMode(w < 768 || touch);
       }
     };
 
@@ -871,7 +884,7 @@ export default function App() {
   const zoneDetails = getZoneDisplayDetails(activeZone);
 
   return (
-    <div id="constelaciones-app-root" className="relative w-screen h-screen overflow-hidden flex flex-col font-sans select-none touch-none" ref={containerRef}>
+    <div id="constelaciones-app-root" className="relative w-dvw h-dvh overflow-hidden flex flex-col font-sans select-none touch-none" ref={containerRef}>
       
       {/* CRT cinematic monitor effect scanlines */}
       <div className="crt-overlay" />
@@ -888,24 +901,24 @@ export default function App() {
       />
 
       {/* HUD HEADER PANEL (Score, HighScore, Audio, and Info Trigger) */}
-      <header className="absolute top-0 inset-x-0 p-4 sm:p-6 flex justify-between items-start pointer-events-none z-10">
+      <header className="absolute top-0 inset-x-0 px-4 sm:px-6 safe-pt flex justify-between items-start pointer-events-none z-10">
         
         {/* Score & Stats Card */}
-        <div className="bg-slate-950/75 backdrop-blur-md border border-slate-800 rounded-xl px-3 py-2 sm:px-4 sm:py-3 pointer-events-auto flex gap-3 sm:gap-6 items-center shadow-lg">
+        <div className="bg-slate-950/75 backdrop-blur-md border border-slate-800 rounded-xl px-2.5 py-1.5 sm:px-4 sm:py-3 pointer-events-auto flex gap-2.5 sm:gap-6 items-center shadow-lg">
           <div className="flex flex-col">
-            <span className="text-[10px] font-mono uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
-              <TrendingUp size={11} className="text-emerald-400" /> Sincronía Actual
+            <span className="text-[10px] sm:text-xs font-mono uppercase tracking-widest text-slate-400 flex items-center gap-1">
+              <TrendingUp size={11} className="text-emerald-400" /> {isMobileMode ? 'Sincronía' : 'Sincronía Actual'}
             </span>
-            <span className="text-2xl sm:text-3xl font-bold font-display tracking-tight text-white transition-all">
+            <span className="text-xl sm:text-3xl font-bold font-display tracking-tight text-white transition-all">
               {Math.round(score)}
             </span>
           </div>
           <div className="h-8 w-[1px] bg-slate-800" />
           <div className="flex flex-col">
-            <span className="text-[10px] font-mono uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
-              <Award size={11} className="text-amber-400" /> Récord Máximo
+            <span className="text-[10px] sm:text-xs font-mono uppercase tracking-widest text-slate-400 flex items-center gap-1">
+              <Award size={11} className="text-amber-400" /> {isMobileMode ? 'Récord' : 'Récord Máximo'}
             </span>
-            <span className="text-xl sm:text-2xl font-semibold font-display tracking-tight text-amber-200">
+            <span className="text-lg sm:text-2xl font-semibold font-display tracking-tight text-amber-200">
               {highScore}
             </span>
           </div>
@@ -917,44 +930,44 @@ export default function App() {
           <button
             id="performance-toggle-btn"
             onClick={toggleMobileMode}
-            className={`p-2.5 sm:p-3 rounded-xl border backdrop-blur-md transition-all flex items-center justify-center cursor-pointer ${
+            className={`p-3 sm:p-3 rounded-xl border backdrop-blur-md transition-all flex items-center justify-center cursor-pointer ${
               isMobileMode 
                 ? 'bg-amber-950/60 border-amber-500/40 text-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.2)]' 
                 : 'bg-slate-950/65 border-slate-800 text-slate-400 hover:text-white hover:border-slate-600'
             }`}
             title={isMobileMode ? "Cambiar a modo Alto Rendimiento (120 partículas)" : "Cambiar a modo Optimizado Celular (55 partículas)"}
           >
-            {isMobileMode ? <Smartphone size={16} className="sm:w-[18px] sm:h-[18px]" /> : <Cpu size={16} className="sm:w-[18px] sm:h-[18px]" />}
+            {isMobileMode ? <Smartphone size={18} className="sm:w-[18px] sm:h-[18px]" /> : <Cpu size={18} className="sm:w-[18px] sm:h-[18px]" />}
           </button>
 
           {/* Audio toggle button */}
           <button
             id="audio-toggle-btn"
             onClick={toggleAudio}
-            className={`p-2.5 sm:p-3 rounded-xl border backdrop-blur-md transition-all flex items-center justify-center cursor-pointer ${
+            className={`p-3 sm:p-3 rounded-xl border backdrop-blur-md transition-all flex items-center justify-center cursor-pointer ${
               audioActive 
                 ? 'bg-sky-950/60 border-sky-500/40 text-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.2)]' 
                 : 'bg-slate-950/65 border-slate-800 text-slate-400 hover:text-white hover:border-slate-600'
             }`}
             title={audioActive ? "Silenciar audio" : "Activar audio atmosférico"}
           >
-            {audioActive ? <Volume2 size={16} className="sm:w-[18px] sm:h-[18px]" /> : <VolumeX size={16} className="sm:w-[18px] sm:h-[18px]" />}
+            {audioActive ? <Volume2 size={18} className="sm:w-[18px] sm:h-[18px]" /> : <VolumeX size={18} className="sm:w-[18px] sm:h-[18px]" />}
           </button>
 
           {/* Info/Tutorial button */}
           <button
             id="tutorial-toggle-btn"
             onClick={() => setShowTutorial(true)}
-            className="p-2.5 sm:p-3 rounded-xl border bg-slate-950/65 border-slate-800 text-slate-400 hover:text-white hover:border-slate-600 backdrop-blur-md transition-all cursor-pointer"
+            className="p-3 sm:p-3 rounded-xl border bg-slate-950/65 border-slate-800 text-slate-400 hover:text-white hover:border-slate-600 backdrop-blur-md transition-all cursor-pointer"
             title="Cómo Jugar"
           >
-            <HelpCircle size={16} className="sm:w-[18px] sm:h-[18px]" />
+            <HelpCircle size={18} className="sm:w-[18px] sm:h-[18px]" />
           </button>
         </div>
       </header>
 
       {/* CENTRALIZED DYNAMIC EQUILIBRIO ZONE HUD PANEL */}
-      <div className="absolute top-20 sm:top-28 inset-x-0 flex flex-col items-center pointer-events-none z-10 px-4">
+      <div className="absolute top-[calc(6.5rem+env(safe-area-inset-top,0px))] sm:top-28 inset-x-0 flex flex-col items-center pointer-events-none z-10 px-4">
         
         {/* Main Zone Banner Gauge */}
         <div className={`transition-all duration-300 w-full max-w-sm sm:max-w-md bg-slate-950/80 backdrop-blur-md border rounded-2xl p-3 sm:p-4 flex flex-col shadow-2xl items-center text-center ${zoneDetails.bgColor} ${zoneDetails.glow}`}>
@@ -969,7 +982,7 @@ export default function App() {
           <p className="text-xs text-slate-300 px-2 leading-relaxed">
             {zoneDetails.desc}
           </p>
-
+ 
           {/* Core Equilibrium Slider / Gauge */}
           <div className="w-full mt-2.5 sm:mt-3.5 relative flex flex-col">
             
@@ -983,7 +996,7 @@ export default function App() {
               
               {/* Danger Right Saturación Zone */}
               <div className="absolute right-0 w-[15%] top-0 bottom-0 bg-red-500/10 rounded-r-full" />
-
+ 
               {/* Current Health slider thumb dot */}
               <div 
                 className="absolute -top-1.5 w-4 h-4 rounded-full bg-white border-2 border-slate-950 -ml-2 shadow-md transition-all duration-150 flex items-center justify-center"
@@ -994,9 +1007,9 @@ export default function App() {
                 }`} />
               </div>
             </div>
-
+ 
             {/* Zone Markers / Labels */}
-            <div className="flex justify-between text-[8px] font-mono uppercase tracking-wider text-slate-500 mt-2 px-1">
+            <div className="flex justify-between text-[10px] sm:text-xs font-mono uppercase tracking-wider text-slate-500 mt-2 px-1">
               <span>AISLAMIENTO (0)</span>
               <span className="text-emerald-500/80">ZONA SALUDABLE (50)</span>
               <span>SATURACIÓN (100)</span>
@@ -1007,23 +1020,23 @@ export default function App() {
           {(metrics.health < 15 || metrics.health > 85) && (
             <div className="mt-3 bg-red-950/80 border border-red-500/30 rounded-lg px-3 py-1.5 text-center flex items-center gap-2 animate-pulse">
               <Activity size={12} className="text-red-500" />
-              <span className="text-[10px] font-mono uppercase tracking-widest text-red-200">
+              <span className="text-[11px] sm:text-xs font-mono uppercase tracking-widest text-red-200">
                 ¡COLAPSO INMINENTE! DESVANCE: <b className="text-white text-xs">{criticalSecondsLeft.toFixed(1)}s</b>
               </span>
             </div>
           )}
-
+ 
           {/* Connection Score Gate Warning if connectivity < 20 */}
           {activeZone === SystemZone.EQUILIBRIO && metrics.connectivity < 20 && (
             <div className="mt-3 bg-yellow-950/40 border border-yellow-500/20 rounded-lg px-3 py-1.5 text-center flex items-center gap-1.5">
               <span className="text-yellow-400">⚠️</span>
-              <span className="text-[9px] font-mono uppercase text-yellow-300">
+              <span className="text-[11px] sm:text-xs font-mono uppercase text-yellow-300">
                 Candado: Conectividad <b className="text-white">{(metrics.connectivity).toFixed(0)}%</b> / 20% (Red Vacía)
               </span>
             </div>
           )}
         </div>
-
+ 
         {/* ACTIVE RANDOM ENVIRONMENTAL THREAT PANEL */}
         {activeEvent.type !== 'NONE' && (
           <div className="mt-3 w-full max-w-sm bg-indigo-950/70 backdrop-blur-md border border-indigo-500/30 rounded-xl p-3 flex gap-3 shadow-xl relative overflow-hidden animate-breathing">
@@ -1034,9 +1047,9 @@ export default function App() {
             <div className="flex flex-col flex-1">
               <div className="flex justify-between items-baseline mb-0.5">
                 <span className="text-xs font-semibold text-indigo-100">{activeEvent.name}</span>
-                <span className="text-[10px] font-mono text-indigo-300">Quedan {activeEvent.durationLeft.toFixed(1)}s</span>
+                <span className="text-[11px] sm:text-xs font-mono text-indigo-300">Quedan {activeEvent.durationLeft.toFixed(1)}s</span>
               </div>
-              <p className="text-[10px] text-indigo-200/80 leading-relaxed leading-snug">
+              <p className="text-[11px] sm:text-xs text-indigo-200/80 leading-relaxed leading-snug">
                 {activeEvent.description}
               </p>
             </div>
@@ -1045,7 +1058,7 @@ export default function App() {
       </div>
 
       {/* BOTTOM CONTROL ACTIONS / UTILITY FOOTER DOCK */}
-      <footer className="absolute bottom-0 inset-x-0 p-2 sm:p-6 pointer-events-none z-10 flex flex-col items-center">
+      <footer className="absolute bottom-0 inset-x-0 px-4 sm:px-6 safe-pb pointer-events-none z-10 flex flex-col items-center">
         
         {/* Interaction controls HUD bar */}
         <div className="flex flex-col sm:flex-row gap-2.5 sm:gap-3 pointer-events-auto bg-slate-950/80 backdrop-blur-lg border border-slate-800 rounded-2xl p-2.5 sm:p-3 shadow-2xl items-center max-w-lg w-full">
@@ -1084,7 +1097,9 @@ export default function App() {
           <div className="flex gap-2 w-full sm:w-auto items-center">
             {/* Pulse indicator & status */}
             <div className="flex flex-col flex-1 sm:flex-initial min-w-[70px]">
-              <span className="text-[8px] font-mono uppercase text-slate-500 text-center">Pulso (Click)</span>
+              <span className="text-[10px] sm:text-xs font-mono uppercase text-slate-500 text-center">
+                {isMobileMode ? 'Pulso (Toca)' : 'Pulso (Click)'}
+              </span>
               <div className="text-center text-xs font-mono font-medium text-slate-300 py-1">
                 {pulseCooldown > 0 ? `${pulseCooldown.toFixed(1)}s` : 'Listo'}
               </div>
@@ -1117,8 +1132,10 @@ export default function App() {
         </div>
 
         {/* Minimal interaction hint */}
-        <p className="text-[10px] text-slate-500 font-mono uppercase tracking-widest mt-2">
-          Click para Pulso | Mantener presionado para Anclar Gravedad
+        <p className="text-[11px] sm:text-xs text-slate-500 font-mono uppercase tracking-widest mt-2 text-center px-4">
+          {isMobileMode 
+            ? 'Toca para Pulso | Mantén presionado para Anclar Gravedad' 
+            : 'Click para Pulso | Mantener presionado para Anclar Gravedad'}
         </p>
       </footer>
 

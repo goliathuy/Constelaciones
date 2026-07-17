@@ -64,3 +64,12 @@
   opacity: 0.15;
 }
 
+/* Safe Area Paddings for notch / swipe bar gestures on mobile devices */
+.safe-pt {
+  padding-top: calc(1rem + env(safe-area-inset-top, 0px));
+}
+
+.safe-pb {
+  padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+}
+
