@@ -16,8 +16,10 @@ export interface GameNode {
   isGhost: boolean; // True during fade-out state
   ghostProgress?: number; // 1.0 down to 0.0 during fade-out
   colorIndex: number; // For aesthetic grouping or diversity
-  specialType?: 'normal' | 'influencer' | 'disruptor' | 'organizador';
+  specialType?: 'normal' | 'influencer' | 'disruptor' | 'organizador' | 'explorador' | 'semilla';
   isolatedTimer?: number; // Tracks duration of continuous isolation for influencers
+  connectedTimer?: number; // Tracks continuous connection duration for explorers
+  seedTimer?: number; // Tracks sprouting progress for community seeds
 }
 
 export interface DynamicObjective {

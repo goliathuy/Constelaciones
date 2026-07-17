@@ -98,9 +98,12 @@ export const TutorialModal: React.FC<TutorialModalProps> = ({
 
           <div className="border-t border-slate-800/60 pt-4">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-white mb-2 flex items-center gap-1.5">
-              🌟 Nodos Especiales:
+              🌟 Nodos Especiales y Evolución:
             </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]">
+            <p className="text-[11px] text-slate-400 mb-3">
+              A medida que aumenta tu sincronía, el ecosistema evoluciona en <b>4 Fases</b> introduciendo mayor complejidad. ¡Mira los nuevos tipos que aparecen en el espacio!
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
               <div className="bg-slate-950/50 p-2 rounded-lg border border-yellow-500/20">
                 <span className="text-yellow-400 font-bold">★ Influencer</span>
                 <p className="text-[10px] text-slate-400 mt-0.5">Atracción masiva. Si pasa más de 5s aislado de su grupo, el sistema entra en caída libre.</p>
@@ -112,6 +115,14 @@ export const TutorialModal: React.FC<TutorialModalProps> = ({
               <div className="bg-slate-950/50 p-2 rounded-lg border border-cyan-500/20">
                 <span className="text-cyan-400 font-bold">♦ Organizador</span>
                 <p className="text-[10px] text-slate-400 mt-0.5">Incrementa la estabilidad de conexión del grupo, previniendo dispersiones bruscas.</p>
+              </div>
+              <div className="bg-slate-950/50 p-2 rounded-lg border border-emerald-500/20">
+                <span className="text-emerald-400 font-bold">▲ Explorador</span>
+                <p className="text-[10px] text-slate-400 mt-0.5">Rehúye de clusters grandes y explora las zonas vacías. Mantenlo conectado por 20s para asimilarlo y ganar <b>+300 pts</b>.</p>
+              </div>
+              <div className="bg-slate-950/50 p-2 rounded-lg border border-amber-500/20 sm:col-span-2">
+                <span className="text-amber-400 font-bold">🌱 Semilla de Comunidad (Fase 4+)</span>
+                <p className="text-[10px] text-slate-400 mt-0.5">Aparece en zonas desiertas. Si mantienes al menos <b>4 nodos conectados</b> dentro de su radio por 20 segundos, la semilla brota: ¡germinando 4 nuevos nodos de inmediato, ganando <b>+1000 pts</b>, y transformándose en un nodo Organizador estable!</p>
               </div>
             </div>
           </div>

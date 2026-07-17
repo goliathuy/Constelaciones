@@ -6,7 +6,11 @@
 import { GameNode, GameMetrics, PHYSICS_CONFIG, EventType, GameEvent } from '../types';
 
 // Generates a random node entering from the screen borders
-export function generateIncomingNode(width: number, height: number): GameNode {
+export function generateIncomingNode(
+  width: number, 
+  height: number,
+  forcedType?: 'normal' | 'influencer' | 'disruptor' | 'organizador' | 'explorador' | 'semilla'
+): GameNode {
   const id = Math.random().toString(36).substring(2, 9);
   
   // Choose a random border: 0 = Top, 1 = Right, 2 = Bottom, 3 = Left
@@ -47,20 +51,31 @@ export function generateIncomingNode(width: number, height: number): GameNode {
       break;
   }
 
-  const typeRoll = Math.random();
-  let specialType: 'normal' | 'influencer' | 'disruptor' | 'organizador' = 'normal';
+  let specialType: 'normal' | 'influencer' | 'disruptor' | 'organizador' | 'explorador' | 'semilla' = 'normal';
   let size = 4 + Math.random() * 4;
 
-  if (typeRoll < 0.06) {
-    specialType = 'influencer';
-    size = 7.5; // larger
-  } else if (typeRoll < 0.12) {
-    specialType = 'disruptor';
-    size = 6.0;
-  } else if (typeRoll < 0.18) {
-    specialType = 'organizador';
-    size = 6.5;
+  if (forcedType) {
+    specialType = forcedType;
+  } else {
+    // Default fallback rolls
+    const typeRoll = Math.random();
+    if (typeRoll < 0.05) {
+      specialType = 'influencer';
+    } else if (typeRoll < 0.10) {
+      specialType = 'disruptor';
+    } else if (typeRoll < 0.15) {
+      specialType = 'organizador';
+    } else if (typeRoll < 0.20) {
+      specialType = 'explorador';
+    }
   }
+
+  // Sizing by type
+  if (specialType === 'influencer') size = 7.5;
+  else if (specialType === 'disruptor') size = 6.0;
+  else if (specialType === 'organizador') size = 6.5;
+  else if (specialType === 'explorador') size = 5.5;
+  else if (specialType === 'semilla') size = 8.0;
 
   return {
     id,
@@ -75,26 +90,17 @@ export function generateIncomingNode(width: number, height: number): GameNode {
     isGhost: false,
     colorIndex: Math.floor(Math.random() * 4), // 4 distinct affinity groups
     specialType,
-    isolatedTimer: specialType === 'influencer' ? 0 : undefined
+    isolatedTimer: specialType === 'influencer' ? 0 : undefined,
+    connectedTimer: specialType === 'explorador' ? 0 : undefined,
+    seedTimer: specialType === 'semilla' ? 0 : undefined
   };
 }
 
-// Generate the initial batch of nodes inside the bounds
+// Generate the initial batch of nodes inside the bounds (all normal initially for learning phase)
 export function generateInitialNodes(count: number, width: number, height: number): GameNode[] {
   const nodes: GameNode[] = [];
   for (let i = 0; i < count; i++) {
-    const typeRoll = Math.random();
-    let specialType: 'normal' | 'influencer' | 'disruptor' | 'organizador' = 'normal';
-    let size = 4 + Math.random() * 4;
-
-    // Spawn only 1-2 special nodes initially so the board starts cleanly
-    if (i === 10) {
-      specialType = 'influencer';
-      size = 7.5;
-    } else if (i === 20) {
-      specialType = 'organizador';
-      size = 6.5;
-    }
+    const size = 4 + Math.random() * 4;
 
     nodes.push({
       id: Math.random().toString(36).substring(2, 9),
@@ -108,8 +114,10 @@ export function generateInitialNodes(count: number, width: number, height: numbe
       lifetime: Date.now() - Math.random() * 50000, // staggered initial lifetimes
       isGhost: false,
       colorIndex: Math.floor(Math.random() * 4), // 4 distinct affinity groups
-      specialType,
-      isolatedTimer: specialType === 'influencer' ? 0 : undefined
+      specialType: 'normal',
+      isolatedTimer: undefined,
+      connectedTimer: undefined,
+      seedTimer: undefined
     });
   }
   return nodes;
@@ -221,6 +229,23 @@ export function updatePhysics(
         a.vy *= 0.96;
       }
 
+      // 4.5. Special Node: Explorador gentle repulsion from any node belonging to a cluster
+      else if (a.specialType === 'explorador' && dist < 220) {
+        if (b.groupId !== null || b.specialType === 'influencer' || b.specialType === 'organizador' || b.specialType === 'semilla') {
+          const force = (220 - dist) / 220 * 0.04 * resonanceMultiplier;
+          fx -= (dx / dist) * force;
+          fy -= (dy / dist) * force;
+        }
+      }
+
+      // 4.8. Special Node: Semilla gentle gravitational pull (like an organizing beacon)
+      else if (b.specialType === 'semilla' && dist >= 20 && dist <= 160) {
+        const force = (dist - 20) / 140 * baseAttraction * 1.2 * resonanceMultiplier;
+        fx += (dx / dist) * force;
+        fy += (dy / dist) * force;
+        neighborCount++;
+      }
+
       // 5. Standard node attraction (social gravity with Affinity Rules)
       else if (dist >= PHYSICS_CONFIG.ATTRACT_DIST_MIN && dist <= PHYSICS_CONFIG.ATTRACT_DIST_MAX) {
         // Affinity rules:
@@ -327,9 +352,14 @@ export function updatePhysics(
       a.vy = (a.vy / speed) * maxSpeed;
     }
 
-    // Move
-    a.x += a.vx;
-    a.y += a.vy;
+    // Move (Semilla stays stationary, others move)
+    if (a.specialType === 'semilla') {
+      a.vx = 0;
+      a.vy = 0;
+    } else {
+      a.x += a.vx;
+      a.y += a.vy;
+    }
 
     // Decay energy gradually
     a.energy = Math.max(0.1, a.energy - 0.015);
@@ -357,6 +387,35 @@ export function updatePhysics(
       } else {
         a.isolatedTimer = 0;
       }
+    }
+
+    // Track connection time for explorers with toroidal math, and add random walk
+    if (a.specialType === 'explorador') {
+      let isConnected = false;
+      for (let j = 0; j < nodes.length; j++) {
+        if (nodes[j].id === a.id || nodes[j].isGhost) continue;
+        let dx = nodes[j].x - a.x;
+        let dy = nodes[j].y - a.y;
+        if (dx > width / 2) dx -= width;
+        else if (dx < -width / 2) dx += width;
+        if (dy > height / 2) dy -= height;
+        else if (dy < -height / 2) dy += height;
+        const dist = Math.hypot(dx, dy);
+        if (dist < PHYSICS_CONFIG.CONNECT_DIST) {
+          isConnected = true;
+          break;
+        }
+      }
+      if (isConnected) {
+        a.connectedTimer = (a.connectedTimer || 0) + 0.016; // approx seconds at 60fps
+        a.energy = Math.min(1.0, a.energy + 0.02);
+      } else {
+        a.connectedTimer = 0;
+      }
+
+      // Wander around randomly
+      a.vx += (Math.random() - 0.5) * 0.35;
+      a.vy += (Math.random() - 0.5) * 0.35;
     }
 
     // Toroidal Pac-Man wrap-around boundaries
@@ -543,4 +602,45 @@ export function calculateGameMetrics(nodes: GameNode[]): { metrics: GameMetrics;
     // Map cluster node indices to original nodes IDs for reference
     nodeGroups: clusters.map(clusterIndices => clusterIndices.map(idx => idx)),
   };
+}
+
+/**
+ * Finds an empty position inside the virtual map by testing several random candidates
+ * and picking the one furthest away from any existing active nodes.
+ */
+export function findEmptyPosition(nodes: GameNode[], width: number, height: number): { x: number; y: number } {
+  let bestX = width / 2;
+  let bestY = height / 2;
+  let maxMinDistance = -1;
+
+  for (let i = 0; i < 8; i++) {
+    const rx = 300 + Math.random() * (width - 600);
+    const ry = 300 + Math.random() * (height - 600);
+    
+    let minDistance = Infinity;
+    nodes.forEach(n => {
+      if (!n.isGhost) {
+        // Toroidal distance to node n
+        let dx = n.x - rx;
+        let dy = n.y - ry;
+        if (dx > width / 2) dx -= width;
+        else if (dx < -width / 2) dx += width;
+        if (dy > height / 2) dy -= height;
+        else if (dy < -height / 2) dy += height;
+        
+        const d = Math.hypot(dx, dy);
+        if (d < minDistance) {
+          minDistance = d;
+        }
+      }
+    });
+
+    if (minDistance > maxMinDistance) {
+      maxMinDistance = minDistance;
+      bestX = rx;
+      bestY = ry;
+    }
+  }
+
+  return { x: bestX, y: bestY };
 }

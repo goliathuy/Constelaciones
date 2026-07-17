@@ -37,7 +37,8 @@ import {
   generateInitialNodes, 
   generateIncomingNode, 
   updatePhysics, 
-  calculateGameMetrics 
+  calculateGameMetrics,
+  findEmptyPosition
 } from './lib/physics';
 import { ambientSynth } from './lib/audio';
 import { AnimatePresence } from 'motion/react';
@@ -236,6 +237,9 @@ export default function App() {
 
   // Refs for high-frequency physics variables to avoid React render lags
   const nodesRef = useRef<GameNode[]>([]);
+  const scoreRef = useRef<number>(0);
+  const currentPhaseRef = useRef<number>(1);
+  const seedSpawnCooldownRef = useRef<number>(5.0);
   const metricsRef = useRef<GameMetrics>({
     crowding: 0,
     isolation: 0,
@@ -291,6 +295,9 @@ export default function App() {
     setIsGameOver(false);
     setIsPlaying(true);
     setScore(0);
+    scoreRef.current = 0;
+    currentPhaseRef.current = 1;
+    seedSpawnCooldownRef.current = 5.0;
     setCriticalSecondsLeft(10.0);
     setPulseCooldown(0);
     setResonanceCooldown(0);
@@ -655,8 +662,47 @@ export default function App() {
             }
           }
 
-          // Generate new node arriving from outer borders of the virtual world
-          const newNode = generateIncomingNode(PHYSICS_CONFIG.WORLD_WIDTH, PHYSICS_CONFIG.WORLD_HEIGHT);
+          // Generate new node arriving from outer borders of the virtual world, applying Phase constraints
+          const currentScore = scoreRef.current;
+          let forcedType: 'normal' | 'influencer' | 'disruptor' | 'organizador' | 'explorador' | 'semilla' = 'normal';
+          
+          const activeSpecialCount = nodesRef.current.filter(
+            n => !n.isGhost && n.specialType && n.specialType !== 'normal' && n.specialType !== 'semilla'
+          ).length;
+
+          if (currentScore < 250) {
+            // Phase 1: only normal nodes
+            forcedType = 'normal';
+          } else if (currentScore < 900) {
+            // Phase 2: max 1 special node of simple type
+            if (activeSpecialCount < 1 && Math.random() < 0.20) {
+              forcedType = Math.random() < 0.5 ? 'explorador' : 'organizador';
+            } else {
+              forcedType = 'normal';
+            }
+          } else if (currentScore < 1800) {
+            // Phase 3: max 2 special nodes of simple or power types
+            if (activeSpecialCount < 2 && Math.random() < 0.25) {
+              const options: Array<'explorador' | 'organizador' | 'influencer' | 'disruptor'> = [
+                'explorador', 'organizador', 'influencer', 'disruptor'
+              ];
+              forcedType = options[Math.floor(Math.random() * options.length)];
+            } else {
+              forcedType = 'normal';
+            }
+          } else {
+            // Phase 4: max 3 special nodes (excluding seeds)
+            if (activeSpecialCount < 3 && Math.random() < 0.30) {
+              const options: Array<'explorador' | 'organizador' | 'influencer' | 'disruptor'> = [
+                'explorador', 'organizador', 'influencer', 'disruptor'
+              ];
+              forcedType = options[Math.floor(Math.random() * options.length)];
+            } else {
+              forcedType = 'normal';
+            }
+          }
+
+          const newNode = generateIncomingNode(PHYSICS_CONFIG.WORLD_WIDTH, PHYSICS_CONFIG.WORLD_HEIGHT, forcedType);
           nodesRef.current.push(newNode);
         }
 
@@ -699,6 +745,7 @@ export default function App() {
           const scoreDelta = 10 * (1.0 + (nextMetrics.clusterQuality / 100)) * dt;
           setScore(prev => {
             const nextScore = prev + scoreDelta;
+            scoreRef.current = nextScore;
             const rounded = Math.round(nextScore);
             
             // Sync High Score
@@ -729,6 +776,235 @@ export default function App() {
           setCriticalSecondsLeft(10.0);
         }
 
+        // 6.2. Ecosystem Evolution Phase transition checks
+        const nextScore = scoreRef.current;
+        let nextPhaseLevel = 1;
+        if (nextScore >= 1800) nextPhaseLevel = 4;
+        else if (nextScore >= 900) nextPhaseLevel = 3;
+        else if (nextScore >= 250) nextPhaseLevel = 2;
+
+        if (nextPhaseLevel !== currentPhaseRef.current) {
+          currentPhaseRef.current = nextPhaseLevel;
+          
+          // Spawn beautiful evolution banner in HUD floating text
+          const pInfo = getEcosystemPhase(nextScore);
+          setFloatingTexts(prev => [
+            ...prev,
+            {
+              id: Math.random().toString(36).substring(2, 9),
+              x: width / 2,
+              y: height * 0.3,
+              text: `✨ ¡EVOLUCIÓN DEL ECOSISTEMA! ✨`,
+              opacity: 1.0,
+              color: "rgba(251, 191, 36, opacity)" // gold
+            },
+            {
+              id: Math.random().toString(36).substring(2, 9),
+              x: width / 2,
+              y: height * 0.36,
+              text: pInfo.name,
+              opacity: 1.0,
+              color: "rgba(255, 255, 255, opacity)"
+            }
+          ]);
+
+          if (audioActiveRef.current) {
+            ambientSynth.playResonanceSFX();
+          }
+        }
+
+        // 6.3. Seed Spawn Logic (Phase 4 only)
+        if (nextPhaseLevel === 4) {
+          const hasActiveSeed = nodesRef.current.some(n => !n.isGhost && n.specialType === 'semilla');
+          if (!hasActiveSeed) {
+            seedSpawnCooldownRef.current -= dt;
+            if (seedSpawnCooldownRef.current <= 0) {
+              // Spawn a community seed
+              const { x, y } = findEmptyPosition(nodesRef.current, PHYSICS_CONFIG.WORLD_WIDTH, PHYSICS_CONFIG.WORLD_HEIGHT);
+              const seedNode: GameNode = {
+                id: Math.random().toString(36).substring(2, 9),
+                x,
+                y,
+                vx: 0,
+                vy: 0,
+                r: 8.5,
+                energy: 1.0,
+                groupId: null,
+                lifetime: Date.now(),
+                isGhost: false,
+                colorIndex: Math.floor(Math.random() * 4),
+                specialType: 'semilla',
+                seedTimer: 0
+              };
+              nodesRef.current.push(seedNode);
+              seedSpawnCooldownRef.current = 999999; // stay inactive until seed completes or is removed
+              
+              setFloatingTexts(prev => [
+                ...prev,
+                {
+                  id: Math.random().toString(36).substring(2, 9),
+                  x: width / 2,
+                  y: height * 0.45,
+                  text: "🌱 ¡Apareció una Semilla de Comunidad! 🌱",
+                  opacity: 1.0,
+                  color: "rgba(253, 224, 71, opacity)" // yellow-300
+                }
+              ]);
+
+              if (audioActiveRef.current) {
+                ambientSynth.playResonanceSFX();
+              }
+            }
+          }
+        }
+
+        // 6.4. Update and check Explorers and Seeds achievements
+        nodesRef.current.forEach(n => {
+          if (n.isGhost) return;
+
+          // Explorer success check (stayed connected for 20s)
+          if (n.specialType === 'explorador' && n.connectedTimer !== undefined && n.connectedTimer >= 20) {
+            n.specialType = 'normal';
+            n.connectedTimer = undefined;
+            n.r = 4 + Math.random() * 4; // return to normal size
+
+            // Award points
+            setScore(prev => {
+              const val = prev + 300;
+              scoreRef.current = val;
+              const rounded = Math.round(val);
+              if (rounded > highScoreRef.current) {
+                setHighScore(rounded);
+              }
+              return val;
+            });
+
+            // Floating text
+            setFloatingTexts(prev => [
+              ...prev,
+              {
+                id: Math.random().toString(36).substring(2, 9),
+                x: width / 2,
+                y: height * 0.45,
+                text: "✨ ¡Explorador Sincronizado! +300 PTS ✨",
+                opacity: 1.0,
+                color: "rgba(52, 211, 153, opacity)" // green-400
+              }
+            ]);
+
+            // Add celebratory ripple
+            ripplesRef.current.push({
+              x: n.x,
+              y: n.y,
+              r: 15,
+              maxR: 200,
+              opacity: 0.8,
+              color: 'rgba(52, 211, 153, 0.5)'
+            });
+
+            if (audioActiveRef.current) {
+              ambientSynth.playResonanceSFX();
+            }
+          }
+
+          // Seed sprouting and progress check (requires 4 connected nodes for 20s)
+          if (n.specialType === 'semilla' && n.seedTimer !== undefined) {
+            // Count active connections to n
+            let connCount = 0;
+            nodesRef.current.forEach(other => {
+              if (other.id === n.id || other.isGhost) return;
+              let dx = other.x - n.x;
+              let dy = other.y - n.y;
+              if (dx > PHYSICS_CONFIG.WORLD_WIDTH / 2) dx -= PHYSICS_CONFIG.WORLD_WIDTH;
+              else if (dx < -PHYSICS_CONFIG.WORLD_WIDTH / 2) dx += PHYSICS_CONFIG.WORLD_WIDTH;
+              if (dy > PHYSICS_CONFIG.WORLD_HEIGHT / 2) dy -= PHYSICS_CONFIG.WORLD_HEIGHT;
+              else if (dy < -PHYSICS_CONFIG.WORLD_HEIGHT / 2) dy += PHYSICS_CONFIG.WORLD_HEIGHT;
+              const d = Math.hypot(dx, dy);
+              if (d < PHYSICS_CONFIG.CONNECT_DIST) {
+                connCount++;
+              }
+            });
+
+            if (connCount >= 4) {
+              n.seedTimer += dt;
+            } else {
+              n.seedTimer = Math.max(0, n.seedTimer - dt * 0.5);
+            }
+
+            if (n.seedTimer >= 20) {
+              // Sprouted!
+              n.specialType = 'organizador';
+              n.seedTimer = undefined;
+              n.r = 6.5; // organizador size
+
+              // Award points
+              setScore(prev => {
+                const val = prev + 1000;
+                scoreRef.current = val;
+                const rounded = Math.round(val);
+                if (rounded > highScoreRef.current) {
+                  setHighScore(rounded);
+                }
+                return val;
+              });
+
+              // Reset seed spawning cooldown
+              seedSpawnCooldownRef.current = 45.0;
+
+              // Floating text
+              setFloatingTexts(prev => [
+                ...prev,
+                {
+                  id: Math.random().toString(36).substring(2, 9),
+                  x: width / 2,
+                  y: height * 0.45,
+                  text: "🌱 ¡Semilla Brotada! +1000 PTS 🌱",
+                  opacity: 1.0,
+                  color: "rgba(253, 224, 71, opacity)" // yellow-300
+                }
+              ]);
+
+              // Celebratory physical ripple
+              ripplesRef.current.push({
+                x: n.x,
+                y: n.y,
+                r: 25,
+                maxR: 350,
+                opacity: 0.9,
+                color: 'rgba(253, 224, 71, 0.7)'
+              });
+
+              // Spawn 4 normal nodes around it of different colors!
+              const colors = [0, 1, 2, 3];
+              for (let i = 0; i < 4; i++) {
+                const angle = (i * Math.PI) / 2;
+                const dist = 60;
+                const rx = n.x + Math.cos(angle) * dist;
+                const ry = n.y + Math.sin(angle) * dist;
+                const newN: GameNode = {
+                  id: Math.random().toString(36).substring(2, 9),
+                  x: rx,
+                  y: ry,
+                  vx: Math.cos(angle) * 1.8,
+                  vy: Math.sin(angle) * 1.8,
+                  r: 4 + Math.random() * 4,
+                  energy: 0.9,
+                  groupId: null,
+                  lifetime: Date.now(),
+                  isGhost: false,
+                  colorIndex: colors[i % colors.length],
+                  specialType: 'normal'
+                };
+                nodesRef.current.push(newN);
+              }
+
+              if (audioActiveRef.current) {
+                ambientSynth.playResonanceSFX();
+              }
+            }
+          }
+        });
+
         // 6.5. Update Dynamic Objectives and floating texts
         setFloatingTexts(prev => {
           return prev
@@ -751,6 +1027,7 @@ export default function App() {
                 // Award bonus points!
                 setScore(prev => {
                   const newScore = prev + 500;
+                  scoreRef.current = newScore;
                   const rounded = Math.round(newScore);
                   if (rounded > highScoreRef.current) {
                     setHighScore(rounded);
@@ -1064,6 +1341,12 @@ export default function App() {
           } else if (n.specialType === 'organizador') {
             auraScale = 4.0;
             colorTheme = { r: 34, g: 211, b: 238 }; // Cyan/Teal
+          } else if (n.specialType === 'explorador') {
+            auraScale = 3.6;
+            colorTheme = { r: 52, g: 211, b: 153 }; // Emerald/Green
+          } else if (n.specialType === 'semilla') {
+            auraScale = 5.0;
+            colorTheme = { r: 251, g: 191, b: 36 }; // Amber/Gold
           }
 
           const glowRadius = n.r * (auraScale + n.energy * 2.5);
@@ -1114,6 +1397,47 @@ export default function App() {
             }
             ctx.closePath();
             ctx.stroke();
+          } else if (n.specialType === 'explorador') {
+            // Elegant outer tracking ring that fills as connection holds
+            ctx.strokeStyle = `rgba(52, 211, 153, ${opacity * 0.4})`;
+            ctx.lineWidth = 1.0;
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, n.r * 2.0, 0, Math.PI * 2);
+            ctx.stroke();
+
+            if (n.connectedTimer && n.connectedTimer > 0) {
+              ctx.strokeStyle = `rgba(52, 211, 153, ${opacity * 0.85})`;
+              ctx.lineWidth = 2.0;
+              ctx.beginPath();
+              const angle = (n.connectedTimer / 20) * Math.PI * 2;
+              ctx.arc(n.x, n.y, n.r * 2.0, -Math.PI / 2, -Math.PI / 2 + angle);
+              ctx.stroke();
+            }
+          } else if (n.specialType === 'semilla') {
+            // Dashed visual limit boundary for connections (CONNECT_DIST = 140px)
+            ctx.strokeStyle = `rgba(251, 191, 36, ${opacity * (0.2 + Math.sin(timestamp * 0.005) * 0.08)})`;
+            ctx.lineWidth = 1.0;
+            ctx.setLineDash([4, 6]);
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, PHYSICS_CONFIG.CONNECT_DIST, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]); // reset
+
+            // Glowing gold progress ring
+            ctx.strokeStyle = `rgba(251, 191, 36, ${opacity * 0.35})`;
+            ctx.lineWidth = 2.0;
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, n.r * 2.2, 0, Math.PI * 2);
+            ctx.stroke();
+
+            if (n.seedTimer && n.seedTimer > 0) {
+              ctx.strokeStyle = `rgba(251, 191, 36, ${opacity * 0.9})`;
+              ctx.lineWidth = 3.0;
+              ctx.beginPath();
+              const angle = (n.seedTimer / 20) * Math.PI * 2;
+              ctx.arc(n.x, n.y, n.r * 2.2, -Math.PI / 2, -Math.PI / 2 + angle);
+              ctx.stroke();
+            }
           }
 
           // Hard Core dot
@@ -1137,6 +1461,8 @@ export default function App() {
             if (n.specialType === 'influencer') sym = '★';
             else if (n.specialType === 'disruptor') sym = '⚡';
             else if (n.specialType === 'organizador') sym = '♦';
+            else if (n.specialType === 'explorador') sym = '▲';
+            else if (n.specialType === 'semilla') sym = '🌱';
             ctx.fillText(sym, n.x, n.y);
           }
         });
@@ -1231,6 +1557,50 @@ export default function App() {
     if (h < 65) return SystemZone.EQUILIBRIO;
     if (h < 85) return SystemZone.CONGESTION;
     return SystemZone.SATURACION;
+  };
+
+  const getEcosystemPhase = (s: number) => {
+    if (s < 250) {
+      return {
+        level: 1,
+        name: "Fase 1: Aprendizaje",
+        description: "Solo nodos normales. Conoce la atracción, la repulsión, el ancla y la resonancia.",
+        color: "text-blue-400",
+        bgColor: "bg-blue-500/10 border-blue-500/30",
+        accentColor: "rgba(59, 130, 246, 0.4)",
+        nextThreshold: 250
+      };
+    } else if (s < 900) {
+      return {
+        level: 2,
+        name: "Fase 2: Diferenciación",
+        description: "Partículas simples: surgieron Exploradores (▲) que se alejan y Catalizadores (♦) que estabilizan.",
+        color: "text-emerald-400",
+        bgColor: "bg-emerald-500/10 border-emerald-500/30",
+        accentColor: "rgba(16, 185, 129, 0.4)",
+        nextThreshold: 900
+      };
+    } else if (s < 1800) {
+      return {
+        level: 3,
+        name: "Fase 3: Complejidad Social",
+        description: "Fuerzas de poder: nacieron Influencers (★) de atracción masiva y Disruptores (⚡) de rechazo.",
+        color: "text-purple-400",
+        bgColor: "bg-purple-500/10 border-purple-500/30",
+        accentColor: "rgba(168, 85, 247, 0.4)",
+        nextThreshold: 1800
+      };
+    } else {
+      return {
+        level: 4,
+        name: "Fase 4: Crisis y Metas",
+        description: "Ecosistema maduro: ¡Aparecen Semillas de Comunidad (🌱) doradas y eventos de alta presión!",
+        color: "text-amber-400",
+        bgColor: "bg-amber-500/10 border-amber-500/30",
+        accentColor: "rgba(245, 158, 11, 0.4)",
+        nextThreshold: Infinity
+      };
+    }
   };
 
   const activeZone = getSystemZone(metrics.health);
@@ -1369,6 +1739,46 @@ export default function App() {
       {/* CENTRALIZED DYNAMIC EQUILIBRIO ZONE HUD PANEL */}
       <div className={`absolute top-[calc(5.5rem+env(safe-area-inset-top,0px))] sm:top-28 inset-x-0 flex flex-col items-center pointer-events-none z-10 px-4 transition-all duration-300 ${isHolding ? 'opacity-20 scale-95' : 'opacity-100 scale-100'}`}>
         
+        {/* Ecosystem Phase Capsule */}
+        <div className={`mb-3 flex flex-col items-center max-w-xs sm:max-w-sm w-full px-3 py-1.5 rounded-xl border backdrop-blur-md transition-all duration-500 bg-slate-950/60 pointer-events-auto cursor-help group relative ${getEcosystemPhase(score).bgColor}`}>
+          <div className="flex items-center justify-between w-full gap-2 text-[10px] sm:text-xs">
+            <span className="font-mono text-slate-400 uppercase tracking-widest flex items-center gap-1">
+              🧬 ECOSISTEMA
+            </span>
+            <span className={`font-semibold tracking-wide font-display ${getEcosystemPhase(score).color}`}>
+              {getEcosystemPhase(score).name}
+            </span>
+          </div>
+          {/* Progress bar to next phase */}
+          {getEcosystemPhase(score).nextThreshold !== Infinity && (
+            <div className="w-full bg-slate-800 h-1 sm:h-1.5 rounded-full mt-1.5 overflow-hidden">
+              <div 
+                className={`h-full rounded-full transition-all duration-500 ${
+                  score >= 1800 ? 'bg-amber-500' : score >= 900 ? 'bg-purple-500' : score >= 250 ? 'bg-emerald-500' : 'bg-blue-500'
+                }`}
+                style={{
+                  width: `${Math.min(100, (score / getEcosystemPhase(score).nextThreshold) * 100)}%`
+                }}
+              />
+            </div>
+          )}
+          {/* Elegant Tooltip describing Phase features on hover */}
+          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 sm:w-80 bg-slate-950/95 border border-slate-800 rounded-lg p-2.5 shadow-2xl opacity-0 scale-95 pointer-events-none group-hover:opacity-100 group-hover:scale-100 transition-all duration-300 z-50 text-left">
+            <h4 className={`text-xs font-semibold font-display mb-1 ${getEcosystemPhase(score).color}`}>
+              {getEcosystemPhase(score).name}
+            </h4>
+            <p className="text-[10px] text-slate-300 font-sans leading-relaxed">
+              {getEcosystemPhase(score).description}
+            </p>
+            {getEcosystemPhase(score).nextThreshold !== Infinity && (
+              <div className="mt-2 pt-2 border-t border-slate-900 flex justify-between items-center text-[9px] font-mono text-slate-400">
+                <span>PROGRESO</span>
+                <span>{Math.round(score)} / {getEcosystemPhase(score).nextThreshold} PTS</span>
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Main Zone Banner Gauge */}
         <div className={`transition-all duration-300 w-full max-w-xs sm:max-w-md bg-slate-950/60 backdrop-blur-md border rounded-2xl p-2 sm:p-4 flex flex-col shadow-2xl items-center text-center pointer-events-none ${zoneDetails.bgColor} ${zoneDetails.glow}`}>
           
