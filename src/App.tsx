@@ -967,27 +967,29 @@ export default function App() {
       </header>
 
       {/* CENTRALIZED DYNAMIC EQUILIBRIO ZONE HUD PANEL */}
-      <div className="absolute top-[calc(6.5rem+env(safe-area-inset-top,0px))] sm:top-28 inset-x-0 flex flex-col items-center pointer-events-none z-10 px-4">
+      <div className="absolute top-[calc(5.5rem+env(safe-area-inset-top,0px))] sm:top-28 inset-x-0 flex flex-col items-center pointer-events-none z-10 px-4">
         
         {/* Main Zone Banner Gauge */}
-        <div className={`transition-all duration-300 w-full max-w-sm sm:max-w-md bg-slate-950/80 backdrop-blur-md border rounded-2xl p-3 sm:p-4 flex flex-col shadow-2xl items-center text-center ${zoneDetails.bgColor} ${zoneDetails.glow}`}>
+        <div className={`transition-all duration-300 w-full max-w-xs sm:max-w-md bg-slate-950/80 backdrop-blur-md border rounded-2xl p-2 sm:p-4 flex flex-col shadow-2xl items-center text-center pointer-events-none ${zoneDetails.bgColor} ${zoneDetails.glow}`}>
           
-          <div className="flex items-center gap-2 mb-1">
-            <span className={`w-2 h-2 rounded-full bg-current ${activeZone === SystemZone.EQUILIBRIO ? 'animate-ping' : ''} ${zoneDetails.textColor}`} />
-            <h2 className={`font-display font-semibold tracking-wide text-sm ${zoneDetails.textColor}`}>
+          <div className="flex items-center gap-1.5 mb-0.5 sm:mb-1">
+            <span className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-current ${activeZone === SystemZone.EQUILIBRIO ? 'animate-ping' : ''} ${zoneDetails.textColor}`} />
+            <h2 className={`font-display font-semibold tracking-wide text-xs sm:text-sm ${zoneDetails.textColor}`}>
               {zoneDetails.title}
             </h2>
           </div>
           
-          <p className="text-xs text-slate-300 px-2 leading-relaxed">
-            {zoneDetails.desc}
-          </p>
- 
+          {!isMobileMode && (
+            <p className="text-xs text-slate-300 px-2 leading-relaxed mb-1">
+              {zoneDetails.desc}
+            </p>
+          )}
+  
           {/* Core Equilibrium Slider / Gauge */}
-          <div className="w-full mt-2.5 sm:mt-3.5 relative flex flex-col">
+          <div className="w-full mt-1.5 sm:mt-3.5 relative flex flex-col">
             
             {/* Visual Health slider line */}
-            <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-visible relative">
+            <div className="h-1 sm:h-1.5 w-full bg-slate-900 rounded-full overflow-visible relative">
               {/* Healthy Zone boundaries background */}
               <div className="absolute left-[35%] right-[35%] top-0 bottom-0 bg-emerald-500/20 border-x border-emerald-500/30" />
               
@@ -996,50 +998,51 @@ export default function App() {
               
               {/* Danger Right Saturación Zone */}
               <div className="absolute right-0 w-[15%] top-0 bottom-0 bg-red-500/10 rounded-r-full" />
- 
+  
               {/* Current Health slider thumb dot */}
               <div 
-                className="absolute -top-1.5 w-4 h-4 rounded-full bg-white border-2 border-slate-950 -ml-2 shadow-md transition-all duration-150 flex items-center justify-center"
+                className="absolute -top-1 sm:-top-1.5 w-3 h-3 sm:w-4 sm:h-4 rounded-full bg-white border-2 border-slate-950 -ml-1.5 sm:-ml-2 shadow-md transition-all duration-150 flex items-center justify-center"
                 style={{ left: `${metrics.health}%` }}
               >
-                <div className={`w-1.5 h-1.5 rounded-full ${
+                <div className={`w-1 sm:w-1.5 h-1 sm:h-1.5 rounded-full ${
                   metrics.health < 15 || metrics.health > 85 ? 'bg-red-500' : 'bg-emerald-400'
                 }`} />
               </div>
             </div>
- 
-            {/* Zone Markers / Labels */}
-            <div className="flex justify-between text-[10px] sm:text-xs font-mono uppercase tracking-wider text-slate-500 mt-2 px-1">
-              <span>AISLAMIENTO (0)</span>
-              <span className="text-emerald-500/80">ZONA SALUDABLE (50)</span>
-              <span>SATURACIÓN (100)</span>
-            </div>
+  
+            {/* Zone Markers / Labels (Hidden on Mobile) */}
+            {!isMobileMode && (
+              <div className="flex justify-between text-[10px] sm:text-xs font-mono uppercase tracking-wider text-slate-500 mt-2 px-1">
+                <span>AISLAMIENTO (0)</span>
+                <span className="text-emerald-500/80">ZONA SALUDABLE (50)</span>
+                <span>SATURACIÓN (100)</span>
+              </div>
+            )}
           </div>
           
           {/* Critical Timer Alarm Countdowns */}
           {(metrics.health < 15 || metrics.health > 85) && (
-            <div className="mt-3 bg-red-950/80 border border-red-500/30 rounded-lg px-3 py-1.5 text-center flex items-center gap-2 animate-pulse">
-              <Activity size={12} className="text-red-500" />
-              <span className="text-[11px] sm:text-xs font-mono uppercase tracking-widest text-red-200">
-                ¡COLAPSO INMINENTE! DESVANCE: <b className="text-white text-xs">{criticalSecondsLeft.toFixed(1)}s</b>
+            <div className="mt-2 bg-red-950/85 border border-red-500/30 rounded-lg px-2.5 py-1 text-center flex items-center gap-1.5 animate-pulse pointer-events-none">
+              <Activity size={10} className="text-red-500" />
+              <span className="text-[10px] sm:text-xs font-mono uppercase tracking-widest text-red-200">
+                COLAPSO: <b className="text-white">{criticalSecondsLeft.toFixed(1)}s</b>
               </span>
             </div>
           )}
- 
+  
           {/* Connection Score Gate Warning if connectivity < 20 */}
           {activeZone === SystemZone.EQUILIBRIO && metrics.connectivity < 20 && (
-            <div className="mt-3 bg-yellow-950/40 border border-yellow-500/20 rounded-lg px-3 py-1.5 text-center flex items-center gap-1.5">
-              <span className="text-yellow-400">⚠️</span>
-              <span className="text-[11px] sm:text-xs font-mono uppercase text-yellow-300">
-                Candado: Conectividad <b className="text-white">{(metrics.connectivity).toFixed(0)}%</b> / 20% (Red Vacía)
+            <div className="mt-2 bg-yellow-950/45 border border-yellow-500/20 rounded-lg px-2.5 py-1 text-center flex items-center gap-1 pointer-events-none">
+              <span className="text-[10px] sm:text-xs font-mono uppercase text-yellow-300">
+                ⚠️ Candado: Conectividad {metrics.connectivity.toFixed(0)}% / 20%
               </span>
             </div>
           )}
         </div>
- 
-        {/* ACTIVE RANDOM ENVIRONMENTAL THREAT PANEL */}
-        {activeEvent.type !== 'NONE' && (
-          <div className="mt-3 w-full max-w-sm bg-indigo-950/70 backdrop-blur-md border border-indigo-500/30 rounded-xl p-3 flex gap-3 shadow-xl relative overflow-hidden animate-breathing">
+  
+        {/* ACTIVE RANDOM ENVIRONMENTAL THREAT PANEL (Desktop Only) */}
+        {!isMobileMode && activeEvent.type !== 'NONE' && (
+          <div className="mt-3 w-full max-w-sm bg-indigo-950/70 backdrop-blur-md border border-indigo-500/30 rounded-xl p-3 flex gap-3 shadow-xl relative overflow-hidden animate-breathing pointer-events-none">
             <div className="absolute inset-y-0 left-0 w-1 bg-indigo-400" />
             <div className="p-1 rounded-lg bg-indigo-500/20 text-indigo-300 flex items-center justify-center self-start">
               <Compass size={16} className="animate-spin" style={{ animationDuration: '8s' }} />
@@ -1057,87 +1060,180 @@ export default function App() {
         )}
       </div>
 
-      {/* BOTTOM CONTROL ACTIONS / UTILITY FOOTER DOCK */}
-      <footer className="absolute bottom-0 inset-x-0 px-4 sm:px-6 safe-pb pointer-events-none z-10 flex flex-col items-center">
-        
-        {/* Interaction controls HUD bar */}
-        <div className="flex flex-col sm:flex-row gap-2.5 sm:gap-3 pointer-events-auto bg-slate-950/80 backdrop-blur-lg border border-slate-800 rounded-2xl p-2.5 sm:p-3 shadow-2xl items-center max-w-lg w-full">
-          
-          {/* Interaction mode toggle: PUSH vs PULL */}
-          <div className="flex items-center bg-slate-900 rounded-xl p-1 w-full sm:w-auto border border-slate-800/80">
-            <button
-              id="mode-repel-btn"
-              onClick={() => setInteractionMode('repel')}
-              className={`flex-1 sm:flex-initial text-center px-2 py-1.5 sm:px-3 rounded-lg text-[11px] sm:text-xs font-medium cursor-pointer transition-all flex items-center justify-center gap-1 sm:gap-1.5 ${
-                interactionMode === 'repel' 
-                  ? 'bg-red-500/15 text-red-400 border border-red-500/20 shadow-sm' 
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Zap size={13} />
-              Pulso: Repeler
-            </button>
-            <button
-              id="mode-attract-btn"
-              onClick={() => setInteractionMode('attract')}
-              className={`flex-1 sm:flex-initial text-center px-2 py-1.5 sm:px-3 rounded-lg text-[11px] sm:text-xs font-medium cursor-pointer transition-all flex items-center justify-center gap-1 sm:gap-1.5 ${
-                interactionMode === 'attract' 
-                  ? 'bg-sky-500/15 text-sky-400 border border-sky-500/20 shadow-sm' 
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Anchor size={13} />
-              Pulso: Atraer
-            </button>
+      {/* ACTIVE RANDOM ENVIRONMENTAL THREAT PANEL (Mobile Floating Pill Toast) */}
+      {isMobileMode && activeEvent.type !== 'NONE' && (
+        <div className="absolute top-[calc(4.5rem+env(safe-area-inset-top,0px))] right-4 z-10 max-w-[160px] bg-indigo-950/85 backdrop-blur-md border border-indigo-500/30 rounded-xl px-2.5 py-1.5 flex gap-2 shadow-xl items-center pointer-events-none animate-pulse">
+          <div className="p-1 rounded-lg bg-indigo-500/20 text-indigo-300 flex items-center justify-center">
+            <Compass size={12} className="animate-spin" style={{ animationDuration: '6s' }} />
           </div>
-
-          <div className="hidden sm:block h-6 w-[1px] bg-slate-800" />
-
-          {/* Action Power Buttons (Pulse & Resonance) */}
-          <div className="flex gap-2 w-full sm:w-auto items-center">
-            {/* Pulse indicator & status */}
-            <div className="flex flex-col flex-1 sm:flex-initial min-w-[70px]">
-              <span className="text-[10px] sm:text-xs font-mono uppercase text-slate-500 text-center">
-                {isMobileMode ? 'Pulso (Toca)' : 'Pulso (Click)'}
-              </span>
-              <div className="text-center text-xs font-mono font-medium text-slate-300 py-1">
-                {pulseCooldown > 0 ? `${pulseCooldown.toFixed(1)}s` : 'Listo'}
-              </div>
-            </div>
-
-            {/* Resonance activation button */}
-            <button
-              id="resonance-active-btn"
-              onClick={triggerResonance}
-              disabled={resonanceCooldown > 0 || resonanceDurationLeft > 0}
-              className={`px-4 py-2 rounded-xl border flex items-center gap-2 cursor-pointer transition-all flex-1 sm:flex-initial justify-center ${
-                resonanceDurationLeft > 0 
-                  ? 'bg-purple-500/20 text-purple-200 border-purple-500/50 shadow-[0_0_15px_rgba(168,85,247,0.3)] animate-pulse'
-                  : resonanceCooldown > 0
-                    ? 'bg-slate-900 border-slate-800 text-slate-500 cursor-not-allowed'
-                    : 'bg-purple-950/50 border-purple-800/60 text-purple-300 hover:text-white hover:border-purple-600 shadow-md'
-              }`}
-              title="Resonancia: Duplica las fuerzas temporalmente (Espacio)"
-            >
-              <Sparkles size={14} className={resonanceDurationLeft > 0 ? 'animate-spin' : ''} />
-              <span className="text-xs font-medium tracking-wide">
-                {resonanceDurationLeft > 0 
-                  ? `ACTIVA (${resonanceDurationLeft.toFixed(1)}s)` 
-                  : resonanceCooldown > 0 
-                    ? `Resonancia (${resonanceCooldown.toFixed(1)}s)`
-                    : 'Resonancia [Espacio]'}
-              </span>
-            </button>
+          <div className="flex flex-col min-w-0">
+            <span className="text-[10px] font-bold text-indigo-100 truncate leading-none mb-0.5">{activeEvent.name}</span>
+            <span className="text-[9px] font-mono text-indigo-300/90 leading-none">Quedan {activeEvent.durationLeft.toFixed(0)}s</span>
           </div>
         </div>
+      )}
 
-        {/* Minimal interaction hint */}
-        <p className="text-[11px] sm:text-xs text-slate-500 font-mono uppercase tracking-widest mt-2 text-center px-4">
-          {isMobileMode 
-            ? 'Toca para Pulso | Mantén presionado para Anclar Gravedad' 
-            : 'Click para Pulso | Mantener presionado para Anclar Gravedad'}
-        </p>
-      </footer>
+      {/* BOTTOM CONTROL ACTIONS / UTILITY FOOTER DOCK */}
+      {isMobileMode ? (
+        /* MOBILE HUD: Ergonomic split controls for thumb play */
+        <div className="absolute bottom-0 inset-x-0 p-4 safe-pb pointer-events-none z-10 flex justify-between items-end">
+          
+          {/* Bottom Left: Repel / Attract Pill */}
+          <div className="pointer-events-auto bg-slate-950/85 backdrop-blur-md border border-slate-800 rounded-xl p-1 flex gap-1 shadow-lg">
+            <button
+              id="mode-repel-btn-mob"
+              onClick={() => setInteractionMode('repel')}
+              className={`px-2.5 py-2 rounded-lg text-xs font-medium cursor-pointer transition-all flex items-center justify-center gap-1 ${
+                interactionMode === 'repel'
+                  ? 'bg-red-500/15 text-red-400 border border-red-500/25 shadow-sm'
+                  : 'text-slate-400'
+              }`}
+              title="Modo Repeler"
+            >
+              <Zap size={14} />
+              <span>Repeler</span>
+            </button>
+            <button
+              id="mode-attract-btn-mob"
+              onClick={() => setInteractionMode('attract')}
+              className={`px-2.5 py-2 rounded-lg text-xs font-medium cursor-pointer transition-all flex items-center justify-center gap-1 ${
+                interactionMode === 'attract'
+                  ? 'bg-sky-500/15 text-sky-400 border border-sky-500/25 shadow-sm'
+                  : 'text-slate-400'
+              }`}
+              title="Modo Atraer"
+            >
+              <Anchor size={14} />
+              <span>Atraer</span>
+            </button>
+          </div>
+
+          {/* Bottom Right: Resonance circular FAB + Pulse Status */}
+          <div className="pointer-events-auto flex flex-col items-center gap-1.5">
+            {/* Pulse Cooldown Badge */}
+            <div className="bg-slate-950/85 backdrop-blur-sm border border-slate-800 rounded-lg px-2 py-0.5 text-[9px] font-mono text-slate-400 shadow-md">
+              PULSO: {pulseCooldown > 0 ? `${pulseCooldown.toFixed(1)}s` : 'Listo'}
+            </div>
+            
+            {/* Resonance FAB Button */}
+            <button
+              id="resonance-active-btn-mob"
+              onClick={triggerResonance}
+              disabled={resonanceCooldown > 0 || resonanceDurationLeft > 0}
+              className={`w-14 h-14 rounded-full border flex flex-col items-center justify-center cursor-pointer transition-all shadow-2xl relative ${
+                resonanceDurationLeft > 0
+                  ? 'bg-purple-500/25 text-purple-200 border-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.4)] animate-pulse'
+                  : resonanceCooldown > 0
+                    ? 'bg-slate-900 border-slate-800 text-slate-600 cursor-not-allowed'
+                    : 'bg-purple-950/70 border-purple-800/80 text-purple-300 hover:text-white hover:border-purple-600 shadow-[0_0_10px_rgba(168,85,247,0.15)]'
+              }`}
+              title="Resonancia: Duplica fuerzas temporalmente"
+            >
+              <Sparkles size={18} className={resonanceDurationLeft > 0 ? 'animate-spin' : ''} style={{ animationDuration: '3s' }} />
+              {resonanceDurationLeft > 0 ? (
+                <span className="text-[9px] font-mono font-bold mt-0.5 text-purple-200">
+                  {resonanceDurationLeft.toFixed(0)}s
+                </span>
+              ) : resonanceCooldown > 0 ? (
+                <span className="text-[9px] font-mono font-bold mt-0.5 text-slate-500">
+                  {resonanceCooldown.toFixed(0)}s
+                </span>
+              ) : (
+                <span className="text-[8px] font-mono font-medium tracking-tighter uppercase mt-0.5 opacity-80">
+                  RESO
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* Bottom Center text hint floating (fully transparent/non-blocking) */}
+          <div className="absolute bottom-1 px-4 inset-x-0 flex justify-center pointer-events-none pb-safe">
+            <p className="text-[9px] text-slate-500/60 font-mono uppercase tracking-widest text-center">
+              Toca para Pulso · Mantén para Gravedad
+            </p>
+          </div>
+        </div>
+      ) : (
+        /* DESKTOP HUD: Sleek centralized control dock */
+        <footer className="absolute bottom-0 inset-x-0 px-4 sm:px-6 safe-pb pointer-events-none z-10 flex flex-col items-center">
+          
+          {/* Interaction controls HUD bar */}
+          <div className="flex flex-col sm:flex-row gap-2.5 sm:gap-3 pointer-events-auto bg-slate-950/80 backdrop-blur-lg border border-slate-800 rounded-2xl p-2.5 sm:p-3 shadow-2xl items-center max-w-lg w-full">
+            
+            {/* Interaction mode toggle: PUSH vs PULL */}
+            <div className="flex items-center bg-slate-900 rounded-xl p-1 w-full sm:w-auto border border-slate-800/80">
+              <button
+                id="mode-repel-btn"
+                onClick={() => setInteractionMode('repel')}
+                className={`flex-1 sm:flex-initial text-center px-2 py-1.5 sm:px-3 rounded-lg text-[11px] sm:text-xs font-medium cursor-pointer transition-all flex items-center justify-center gap-1 sm:gap-1.5 ${
+                  interactionMode === 'repel' 
+                    ? 'bg-red-500/15 text-red-400 border border-red-500/20 shadow-sm' 
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Zap size={13} />
+                Pulso: Repeler
+              </button>
+              <button
+                id="mode-attract-btn"
+                onClick={() => setInteractionMode('attract')}
+                className={`flex-1 sm:flex-initial text-center px-2 py-1.5 sm:px-3 rounded-lg text-[11px] sm:text-xs font-medium cursor-pointer transition-all flex items-center justify-center gap-1 sm:gap-1.5 ${
+                  interactionMode === 'attract' 
+                    ? 'bg-sky-500/15 text-sky-400 border border-sky-500/20 shadow-sm' 
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Anchor size={13} />
+                Pulso: Atraer
+              </button>
+            </div>
+  
+            <div className="hidden sm:block h-6 w-[1px] bg-slate-800" />
+  
+            {/* Action Power Buttons (Pulse & Resonance) */}
+            <div className="flex gap-2 w-full sm:w-auto items-center">
+              {/* Pulse indicator & status */}
+              <div className="flex flex-col flex-1 sm:flex-initial min-w-[70px]">
+                <span className="text-[10px] sm:text-xs font-mono uppercase text-slate-500 text-center">
+                  Pulso (Click)
+                </span>
+                <div className="text-center text-xs font-mono font-medium text-slate-300 py-1">
+                  {pulseCooldown > 0 ? `${pulseCooldown.toFixed(1)}s` : 'Listo'}
+                </div>
+              </div>
+  
+              {/* Resonance activation button */}
+              <button
+                id="resonance-active-btn"
+                onClick={triggerResonance}
+                disabled={resonanceCooldown > 0 || resonanceDurationLeft > 0}
+                className={`px-4 py-2 rounded-xl border flex items-center gap-2 cursor-pointer transition-all flex-1 sm:flex-initial justify-center ${
+                  resonanceDurationLeft > 0 
+                    ? 'bg-purple-500/20 text-purple-200 border-purple-500/50 shadow-[0_0_15px_rgba(168,85,247,0.3)] animate-pulse'
+                    : resonanceCooldown > 0
+                      ? 'bg-slate-900 border-slate-800 text-slate-500 cursor-not-allowed'
+                      : 'bg-purple-950/50 border-purple-800/60 text-purple-300 hover:text-white hover:border-purple-600 shadow-md'
+                }`}
+                title="Resonancia: Duplica las fuerzas temporalmente (Espacio)"
+              >
+                <Sparkles size={14} className={resonanceDurationLeft > 0 ? 'animate-spin' : ''} />
+                <span className="text-xs font-medium tracking-wide">
+                  {resonanceDurationLeft > 0 
+                    ? `ACTIVA (${resonanceDurationLeft.toFixed(1)}s)` 
+                    : resonanceCooldown > 0 
+                      ? `Resonancia (${resonanceCooldown.toFixed(1)}s)`
+                      : 'Resonancia [Espacio]'}
+                </span>
+              </button>
+            </div>
+          </div>
+  
+          {/* Minimal interaction hint */}
+          <p className="text-[11px] sm:text-xs text-slate-500 font-mono uppercase tracking-widest mt-2 text-center px-4">
+            Click para Pulso | Mantener presionado para Anclar Gravedad
+          </p>
+        </footer>
+      )}
 
       {/* FLOATING SIDEBAR FOR TECHNICAL METRICS (Fórmula details) */}
       {isPlaying && !isGameOver && (
