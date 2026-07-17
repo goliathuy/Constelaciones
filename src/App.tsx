@@ -1720,7 +1720,7 @@ export default function App() {
       />
 
       {/* HUD HEADER PANEL (Score, HighScore, Audio, and Info Trigger) */}
-      <header className={`absolute top-0 inset-x-0 px-4 sm:px-6 safe-pt flex justify-between items-start pointer-events-none z-10 transition-all duration-300 ${isHolding ? 'opacity-20' : 'opacity-100'}`}>
+      <header className={`absolute top-0 inset-x-0 px-4 sm:px-6 py-4 safe-pt flex justify-between items-center pointer-events-none z-10 transition-all duration-300 ${isHolding ? 'opacity-20' : 'opacity-100'}`}>
         
         {/* Score & Stats Card */}
         <div className="bg-slate-950/75 backdrop-blur-md border border-slate-800 rounded-xl px-2.5 py-1.5 sm:px-4 sm:py-3 pointer-events-auto flex gap-2.5 sm:gap-6 items-center shadow-lg">
@@ -1742,6 +1742,87 @@ export default function App() {
             </span>
           </div>
         </div>
+
+        {/* Center: Ecosystem Phase & Compact Zone Banner Gauge (Desktop Only) */}
+        {!isMobileMode && (
+          <div className="hidden md:flex items-center gap-4 pointer-events-auto max-w-[50%] lg:max-w-[60%] shrink-0">
+            {/* Ecosystem Phase Badge (Compact) */}
+            <div className={`flex flex-col px-3 py-1.5 rounded-xl border backdrop-blur-md bg-slate-950/60 cursor-help group relative shrink-0 ${getEcosystemPhase(score).bgColor}`}>
+              <div className="flex flex-col text-left">
+                <span className="font-mono text-[8px] text-slate-400 uppercase tracking-widest">🧬 Ecosistema</span>
+                <span className={`font-bold tracking-wide font-display text-xs ${getEcosystemPhase(score).color}`}>
+                  {getEcosystemPhase(score).name}
+                </span>
+              </div>
+              {/* Elegant Tooltip describing Phase features on hover */}
+              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 bg-slate-950/95 border border-slate-800 rounded-lg p-2.5 shadow-2xl opacity-0 scale-95 pointer-events-none group-hover:opacity-100 group-hover:scale-100 transition-all duration-300 z-50 text-left">
+                <h4 className={`text-xs font-semibold font-display mb-1 ${getEcosystemPhase(score).color}`}>
+                  {getEcosystemPhase(score).name}
+                </h4>
+                <p className="text-[10px] text-slate-300 font-sans leading-relaxed">
+                  {getEcosystemPhase(score).description}
+                </p>
+                {getEcosystemPhase(score).nextThreshold !== Infinity && (
+                  <div className="mt-2 pt-2 border-t border-slate-900 flex justify-between items-center text-[9px] font-mono text-slate-400">
+                    <span>PROGRESO</span>
+                    <span>{Math.round(score)} / {getEcosystemPhase(score).nextThreshold} PTS</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Compact Zone Banner Gauge */}
+            <div className={`flex items-center gap-4 bg-slate-950/60 backdrop-blur-md border rounded-xl px-4 py-2.5 shadow-xl pointer-events-auto w-[320px] lg:w-[380px] shrink-0 transition-all ${zoneDetails.bgColor} ${zoneDetails.glow}`}>
+              <div className="flex flex-col items-start shrink-0 text-left min-w-[100px] lg:min-w-[120px]">
+                <div className="flex items-center gap-1">
+                  <span className={`w-1.5 h-1.5 rounded-full bg-current ${activeZone === SystemZone.EQUILIBRIO ? 'animate-ping' : ''} ${zoneDetails.textColor}`} />
+                  <h2 className={`font-display font-semibold tracking-wide text-[11px] lg:text-xs truncate ${zoneDetails.textColor}`}>
+                    {zoneDetails.title}
+                  </h2>
+                </div>
+                {/* Critical Timer alarm countdown or Grace Period */}
+                {graceTimer > 0 ? (
+                  <span className="text-[8px] font-mono uppercase tracking-widest text-sky-400 font-semibold animate-pulse mt-0.5">
+                    INMUNE: {graceTimer.toFixed(0)}s
+                  </span>
+                ) : (
+                  (metrics.health < 15 || metrics.health > 85) && (
+                    <span className="text-[8px] font-mono uppercase tracking-widest text-red-500 font-semibold animate-pulse mt-0.5">
+                      COLAPSO: {criticalSecondsLeft.toFixed(1)}s
+                    </span>
+                  )
+                )}
+              </div>
+
+              {/* Slider / Gauge */}
+              <div className="flex-1 relative flex flex-col justify-center">
+                {/* Slider bar */}
+                <div className="h-1 w-full bg-slate-900 rounded-full overflow-visible relative">
+                  <div className="absolute left-[35%] right-[35%] top-0 bottom-0 bg-emerald-500/20 border-x border-emerald-500/30" />
+                  <div className="absolute left-0 w-[15%] top-0 bottom-0 bg-red-500/10 rounded-l-full" />
+                  <div className="absolute right-0 w-[15%] top-0 bottom-0 bg-red-500/10 rounded-r-full" />
+                  
+                  {/* Thumb dot */}
+                  <div 
+                    className="absolute -top-1 w-2.5 h-2.5 rounded-full bg-white border border-slate-950 -ml-1.25 shadow-md transition-all duration-150 flex items-center justify-center"
+                    style={{ left: `${metrics.health}%` }}
+                  >
+                    <div className={`w-1 h-1 rounded-full ${
+                      metrics.health < 15 || metrics.health > 85 ? 'bg-red-500' : 'bg-emerald-400'
+                    }`} />
+                  </div>
+                </div>
+                
+                {/* Compact labels */}
+                <div className="flex justify-between text-[8px] font-mono uppercase tracking-wider mt-1">
+                  <span className={metrics.health < 35 ? 'text-sky-400 font-bold' : 'text-slate-500/80'}>AISLAMIENTO</span>
+                  <span className={metrics.health >= 35 && metrics.health <= 65 ? 'text-emerald-400 font-bold' : 'text-slate-500/80'}>EQUILIBRIO</span>
+                  <span className={metrics.health > 65 ? 'text-rose-500 font-bold' : 'text-slate-500/80'}>CONGESTIÓN</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Global Sound and Info Action utilities */}
         <div className="flex gap-1.5 sm:gap-2 pointer-events-auto">
@@ -1789,140 +1870,144 @@ export default function App() {
       <div className={`absolute top-[calc(5.5rem+env(safe-area-inset-top,0px))] sm:top-28 inset-x-0 flex flex-col items-center pointer-events-none z-10 px-4 transition-all duration-300 ${isHolding ? 'opacity-20 scale-95' : 'opacity-100 scale-100'}`}>
         
         {/* Ecosystem Phase Capsule */}
-        <div className={`mb-3 flex flex-col items-center max-w-xs sm:max-w-sm w-full px-3 py-1.5 rounded-xl border backdrop-blur-md transition-all duration-500 bg-slate-950/60 pointer-events-auto cursor-help group relative ${getEcosystemPhase(score).bgColor}`}>
-          <div className="flex items-center justify-between w-full gap-2 text-[10px] sm:text-xs">
-            <span className="font-mono text-slate-400 uppercase tracking-widest flex items-center gap-1">
-              🧬 ECOSISTEMA
-            </span>
-            <span className={`font-semibold tracking-wide font-display ${getEcosystemPhase(score).color}`}>
-              {getEcosystemPhase(score).name}
-            </span>
-          </div>
-          {/* Progress bar to next phase */}
-          {getEcosystemPhase(score).nextThreshold !== Infinity && (
-            <div className="w-full bg-slate-800 h-1 sm:h-1.5 rounded-full mt-1.5 overflow-hidden">
-              <div 
-                className={`h-full rounded-full transition-all duration-500 ${
-                  score >= 1800 ? 'bg-amber-500' : score >= 900 ? 'bg-purple-500' : score >= 250 ? 'bg-emerald-500' : 'bg-blue-500'
-                }`}
-                style={{
-                  width: `${Math.min(100, (score / getEcosystemPhase(score).nextThreshold) * 100)}%`
-                }}
-              />
+        {isMobileMode && (
+          <div className={`mb-3 flex flex-col items-center max-w-xs sm:max-w-sm w-full px-3 py-1.5 rounded-xl border backdrop-blur-md transition-all duration-500 bg-slate-950/60 pointer-events-auto cursor-help group relative ${getEcosystemPhase(score).bgColor}`}>
+            <div className="flex items-center justify-between w-full gap-2 text-[10px] sm:text-xs">
+              <span className="font-mono text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                🧬 ECOSISTEMA
+              </span>
+              <span className={`font-semibold tracking-wide font-display ${getEcosystemPhase(score).color}`}>
+                {getEcosystemPhase(score).name}
+              </span>
             </div>
-          )}
-          {/* Elegant Tooltip describing Phase features on hover */}
-          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 sm:w-80 bg-slate-950/95 border border-slate-800 rounded-lg p-2.5 shadow-2xl opacity-0 scale-95 pointer-events-none group-hover:opacity-100 group-hover:scale-100 transition-all duration-300 z-50 text-left">
-            <h4 className={`text-xs font-semibold font-display mb-1 ${getEcosystemPhase(score).color}`}>
-              {getEcosystemPhase(score).name}
-            </h4>
-            <p className="text-[10px] text-slate-300 font-sans leading-relaxed">
-              {getEcosystemPhase(score).description}
-            </p>
+            {/* Progress bar to next phase */}
             {getEcosystemPhase(score).nextThreshold !== Infinity && (
-              <div className="mt-2 pt-2 border-t border-slate-900 flex justify-between items-center text-[9px] font-mono text-slate-400">
-                <span>PROGRESO</span>
-                <span>{Math.round(score)} / {getEcosystemPhase(score).nextThreshold} PTS</span>
+              <div className="w-full bg-slate-800 h-1 sm:h-1.5 rounded-full mt-1.5 overflow-hidden">
+                <div 
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    score >= 1800 ? 'bg-amber-500' : score >= 900 ? 'bg-purple-500' : score >= 250 ? 'bg-emerald-500' : 'bg-blue-500'
+                  }`}
+                  style={{
+                    width: `${Math.min(100, (score / getEcosystemPhase(score).nextThreshold) * 100)}%`
+                  }}
+                />
+              </div>
+            )}
+            {/* Elegant Tooltip describing Phase features on hover */}
+            <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 sm:w-80 bg-slate-950/95 border border-slate-800 rounded-lg p-2.5 shadow-2xl opacity-0 scale-95 pointer-events-none group-hover:opacity-100 group-hover:scale-100 transition-all duration-300 z-50 text-left">
+              <h4 className={`text-xs font-semibold font-display mb-1 ${getEcosystemPhase(score).color}`}>
+                {getEcosystemPhase(score).name}
+              </h4>
+              <p className="text-[10px] text-slate-300 font-sans leading-relaxed">
+                {getEcosystemPhase(score).description}
+              </p>
+              {getEcosystemPhase(score).nextThreshold !== Infinity && (
+                <div className="mt-2 pt-2 border-t border-slate-900 flex justify-between items-center text-[9px] font-mono text-slate-400">
+                  <span>PROGRESO</span>
+                  <span>{Math.round(score)} / {getEcosystemPhase(score).nextThreshold} PTS</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Main Zone Banner Gauge */}
+        {isMobileMode && (
+          <div className={`transition-all duration-300 w-full max-w-xs sm:max-w-md bg-slate-950/60 backdrop-blur-md border rounded-2xl p-2 sm:p-4 flex flex-col shadow-2xl items-center text-center pointer-events-none ${zoneDetails.bgColor} ${zoneDetails.glow}`}>
+            
+            <div className="flex items-center gap-1.5 mb-0.5 sm:mb-1">
+              <span className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-current ${activeZone === SystemZone.EQUILIBRIO ? 'animate-ping' : ''} ${zoneDetails.textColor}`} />
+              <h2 className={`font-display font-semibold tracking-wide text-xs sm:text-sm ${zoneDetails.textColor}`}>
+                {zoneDetails.title}
+              </h2>
+            </div>
+            
+            {!isMobileMode && (
+              <p className="text-xs text-slate-300 px-2 leading-relaxed mb-1">
+                {zoneDetails.desc}
+              </p>
+            )}
+    
+            {/* Core Equilibrium Slider / Gauge */}
+            <div className="w-full mt-1.5 sm:mt-3 relative flex flex-col">
+              
+              {/* Visual Health slider line */}
+              <div className="h-1 sm:h-1.5 w-full bg-slate-900 rounded-full overflow-visible relative">
+                {/* Healthy Zone boundaries background */}
+                <div className="absolute left-[35%] right-[35%] top-0 bottom-0 bg-emerald-500/20 border-x border-emerald-500/30" />
+                
+                {/* Danger Left Aislamiento Zone */}
+                <div className="absolute left-0 w-[15%] top-0 bottom-0 bg-red-500/10 rounded-l-full" />
+                
+                {/* Danger Right Saturación Zone */}
+                <div className="absolute right-0 w-[15%] top-0 bottom-0 bg-red-500/10 rounded-r-full" />
+    
+                {/* Current Health slider thumb dot */}
+                <div 
+                  className="absolute -top-1 sm:-top-1.5 w-3 h-3 sm:w-4 sm:h-4 rounded-full bg-white border-2 border-slate-950 -ml-1.5 sm:-ml-2 shadow-md transition-all duration-150 flex items-center justify-center"
+                  style={{ left: `${metrics.health}%` }}
+                >
+                  <div className={`w-1 sm:w-1.5 h-1 sm:h-1.5 rounded-full ${
+                    metrics.health < 15 || metrics.health > 85 ? 'bg-red-500' : 'bg-emerald-400'
+                  }`} />
+                </div>
+              </div>
+    
+              {/* Zone Markers / Labels (Visible on both Mobile and Desktop with highly intuitive alignment highlights) */}
+              <div className="flex justify-between text-[8px] sm:text-[11px] font-mono uppercase tracking-wider mt-1.5 px-0.5">
+                <span className={`transition-all duration-300 ${
+                  metrics.health < 35 
+                    ? 'text-sky-400 font-bold drop-shadow-[0_0_8px_rgba(56,189,248,0.6)] scale-105' 
+                    : 'text-slate-500/80'
+                }`}>
+                  Aislamiento
+                </span>
+                <span className={`transition-all duration-300 ${
+                  metrics.health >= 35 && metrics.health <= 65 
+                    ? 'text-emerald-400 font-bold drop-shadow-[0_0_8px_rgba(52,211,153,0.6)] scale-105' 
+                    : 'text-slate-500/80'
+                }`}>
+                  Equilibrio
+                </span>
+                <span className={`transition-all duration-300 ${
+                  metrics.health > 65 
+                    ? 'text-rose-500 font-bold drop-shadow-[0_0_8px_rgba(244,63,94,0.6)] scale-105' 
+                    : 'text-slate-500/80'
+                }`}>
+                  Congestión
+                </span>
+              </div>
+            </div>
+            
+            {/* Critical Timer Alarm Countdowns or Grace Period Stabilization */}
+            {graceTimer > 0 ? (
+              <div className="mt-2 bg-sky-950/85 border border-sky-500/30 rounded-lg px-2.5 py-1 text-center flex items-center gap-1.5 animate-pulse pointer-events-none">
+                <Activity size={10} className="text-sky-400" />
+                <span className="text-[10px] sm:text-xs font-mono uppercase tracking-widest text-sky-200">
+                  ESTABILIZANDO RED (Inmune): <b className="text-white">{graceTimer.toFixed(1)}s</b>
+                </span>
+              </div>
+            ) : (
+              (metrics.health < 15 || metrics.health > 85) && (
+                <div className="mt-2 bg-red-950/85 border border-red-500/30 rounded-lg px-2.5 py-1 text-center flex items-center gap-1.5 animate-pulse pointer-events-none">
+                  <Activity size={10} className="text-red-500" />
+                  <span className="text-[10px] sm:text-xs font-mono uppercase tracking-widest text-red-200">
+                    COLAPSO: <b className="text-white">{criticalSecondsLeft.toFixed(1)}s</b>
+                  </span>
+                </div>
+              )
+            )}
+    
+            {/* Connection Score Gate Warning if connectivity < 20 */}
+            {activeZone === SystemZone.EQUILIBRIO && metrics.connectivity < 20 && (
+              <div className="mt-2 bg-yellow-950/45 border border-yellow-500/20 rounded-lg px-2.5 py-1 text-center flex items-center gap-1 pointer-events-none">
+                <span className="text-[10px] sm:text-xs font-mono uppercase text-yellow-300">
+                  ⚠️ Candado: Conectividad {metrics.connectivity.toFixed(0)}% / 20%
+                </span>
               </div>
             )}
           </div>
-        </div>
-
-        {/* Main Zone Banner Gauge */}
-        <div className={`transition-all duration-300 w-full max-w-xs sm:max-w-md bg-slate-950/60 backdrop-blur-md border rounded-2xl p-2 sm:p-4 flex flex-col shadow-2xl items-center text-center pointer-events-none ${zoneDetails.bgColor} ${zoneDetails.glow}`}>
-          
-          <div className="flex items-center gap-1.5 mb-0.5 sm:mb-1">
-            <span className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-current ${activeZone === SystemZone.EQUILIBRIO ? 'animate-ping' : ''} ${zoneDetails.textColor}`} />
-            <h2 className={`font-display font-semibold tracking-wide text-xs sm:text-sm ${zoneDetails.textColor}`}>
-              {zoneDetails.title}
-            </h2>
-          </div>
-          
-          {!isMobileMode && (
-            <p className="text-xs text-slate-300 px-2 leading-relaxed mb-1">
-              {zoneDetails.desc}
-            </p>
-          )}
-  
-          {/* Core Equilibrium Slider / Gauge */}
-          <div className="w-full mt-1.5 sm:mt-3 relative flex flex-col">
-            
-            {/* Visual Health slider line */}
-            <div className="h-1 sm:h-1.5 w-full bg-slate-900 rounded-full overflow-visible relative">
-              {/* Healthy Zone boundaries background */}
-              <div className="absolute left-[35%] right-[35%] top-0 bottom-0 bg-emerald-500/20 border-x border-emerald-500/30" />
-              
-              {/* Danger Left Aislamiento Zone */}
-              <div className="absolute left-0 w-[15%] top-0 bottom-0 bg-red-500/10 rounded-l-full" />
-              
-              {/* Danger Right Saturación Zone */}
-              <div className="absolute right-0 w-[15%] top-0 bottom-0 bg-red-500/10 rounded-r-full" />
-  
-              {/* Current Health slider thumb dot */}
-              <div 
-                className="absolute -top-1 sm:-top-1.5 w-3 h-3 sm:w-4 sm:h-4 rounded-full bg-white border-2 border-slate-950 -ml-1.5 sm:-ml-2 shadow-md transition-all duration-150 flex items-center justify-center"
-                style={{ left: `${metrics.health}%` }}
-              >
-                <div className={`w-1 sm:w-1.5 h-1 sm:h-1.5 rounded-full ${
-                  metrics.health < 15 || metrics.health > 85 ? 'bg-red-500' : 'bg-emerald-400'
-                }`} />
-              </div>
-            </div>
-  
-            {/* Zone Markers / Labels (Visible on both Mobile and Desktop with highly intuitive alignment highlights) */}
-            <div className="flex justify-between text-[8px] sm:text-[11px] font-mono uppercase tracking-wider mt-1.5 px-0.5">
-              <span className={`transition-all duration-300 ${
-                metrics.health < 35 
-                  ? 'text-sky-400 font-bold drop-shadow-[0_0_8px_rgba(56,189,248,0.6)] scale-105' 
-                  : 'text-slate-500/80'
-              }`}>
-                Aislamiento
-              </span>
-              <span className={`transition-all duration-300 ${
-                metrics.health >= 35 && metrics.health <= 65 
-                  ? 'text-emerald-400 font-bold drop-shadow-[0_0_8px_rgba(52,211,153,0.6)] scale-105' 
-                  : 'text-slate-500/80'
-              }`}>
-                Equilibrio
-              </span>
-              <span className={`transition-all duration-300 ${
-                metrics.health > 65 
-                  ? 'text-rose-500 font-bold drop-shadow-[0_0_8px_rgba(244,63,94,0.6)] scale-105' 
-                  : 'text-slate-500/80'
-              }`}>
-                Congestión
-              </span>
-            </div>
-          </div>
-          
-          {/* Critical Timer Alarm Countdowns or Grace Period Stabilization */}
-          {graceTimer > 0 ? (
-            <div className="mt-2 bg-sky-950/85 border border-sky-500/30 rounded-lg px-2.5 py-1 text-center flex items-center gap-1.5 animate-pulse pointer-events-none">
-              <Activity size={10} className="text-sky-400" />
-              <span className="text-[10px] sm:text-xs font-mono uppercase tracking-widest text-sky-200">
-                ESTABILIZANDO RED (Inmune): <b className="text-white">{graceTimer.toFixed(1)}s</b>
-              </span>
-            </div>
-          ) : (
-            (metrics.health < 15 || metrics.health > 85) && (
-              <div className="mt-2 bg-red-950/85 border border-red-500/30 rounded-lg px-2.5 py-1 text-center flex items-center gap-1.5 animate-pulse pointer-events-none">
-                <Activity size={10} className="text-red-500" />
-                <span className="text-[10px] sm:text-xs font-mono uppercase tracking-widest text-red-200">
-                  COLAPSO: <b className="text-white">{criticalSecondsLeft.toFixed(1)}s</b>
-                </span>
-              </div>
-            )
-          )}
-  
-          {/* Connection Score Gate Warning if connectivity < 20 */}
-          {activeZone === SystemZone.EQUILIBRIO && metrics.connectivity < 20 && (
-            <div className="mt-2 bg-yellow-950/45 border border-yellow-500/20 rounded-lg px-2.5 py-1 text-center flex items-center gap-1 pointer-events-none">
-              <span className="text-[10px] sm:text-xs font-mono uppercase text-yellow-300">
-                ⚠️ Candado: Conectividad {metrics.connectivity.toFixed(0)}% / 20%
-              </span>
-            </div>
-          )}
-        </div>
+        )}
 
         {/* OBJECTIVE HUD CARD */}
         {currentObjective && (
@@ -2070,60 +2155,95 @@ export default function App() {
           </div>
         </div>
       ) : (
-        /* DESKTOP HUD: Sleek centralized control dock */
-        <footer className={`absolute bottom-0 inset-x-0 px-4 sm:px-6 safe-pb pointer-events-none z-10 flex flex-col items-center transition-all duration-300 ${isHolding ? 'opacity-20' : 'opacity-100'}`}>
+        /* DESKTOP HUD: Sleek full-width unified dashboard */
+        <footer className={`absolute bottom-0 inset-x-0 bg-slate-950/85 backdrop-blur-xl border-t border-slate-800/90 py-3.5 px-6 shadow-2xl pointer-events-auto z-10 transition-all duration-300 ${isHolding ? 'opacity-20' : 'opacity-100'} hidden md:flex items-center justify-between`}>
           
-          {/* Interaction controls HUD bar */}
-          <div className="flex flex-col sm:flex-row gap-2.5 sm:gap-3 pointer-events-auto bg-slate-950/80 backdrop-blur-lg border border-slate-800 rounded-2xl p-2.5 sm:p-3 shadow-2xl items-center max-w-lg w-full">
-            
-            {/* Interaction mode toggle: PUSH vs PULL */}
-            <div className="flex items-center bg-slate-900 rounded-xl p-1 w-full sm:w-auto border border-slate-800/80">
-              <button
-                id="mode-repel-btn"
-                onClick={() => setInteractionMode('repel')}
-                className={`flex-1 sm:flex-initial text-center px-2 py-1.5 sm:px-3 rounded-lg text-[11px] sm:text-xs font-medium cursor-pointer transition-all flex items-center justify-center gap-1 sm:gap-1.5 ${
-                  interactionMode === 'repel' 
-                    ? 'bg-red-500/15 text-red-400 border border-red-500/20 shadow-sm' 
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <Zap size={13} />
-                Pulso: Repeler
-              </button>
-              <button
-                id="mode-attract-btn"
-                onClick={() => setInteractionMode('attract')}
-                className={`flex-1 sm:flex-initial text-center px-2 py-1.5 sm:px-3 rounded-lg text-[11px] sm:text-xs font-medium cursor-pointer transition-all flex items-center justify-center gap-1 sm:gap-1.5 ${
-                  interactionMode === 'attract' 
-                    ? 'bg-sky-500/15 text-sky-400 border border-sky-500/20 shadow-sm' 
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <Anchor size={13} />
-                Pulso: Atraer
-              </button>
-            </div>
-  
-            <div className="hidden sm:block h-6 w-[1px] bg-slate-800" />
-  
-            {/* Action Power Buttons (Pulse & Resonance) */}
-            <div className="flex gap-2 w-full sm:w-auto items-center">
-              {/* Pulse indicator & status */}
-              <div className="flex flex-col flex-1 sm:flex-initial min-w-[70px]">
-                <span className="text-[10px] sm:text-xs font-mono uppercase text-slate-500 text-center">
-                  Pulso (Click)
+          {/* Left Side: Consolidated Network Parameters (Parámetros de Red) */}
+          <div className="flex flex-col min-w-[280px] text-left">
+            <span className="text-[9px] uppercase tracking-wider text-sky-400 font-bold font-mono flex items-center gap-1.5 mb-1.5">
+              <Activity size={11} className="animate-pulse" /> Parámetros de Red
+            </span>
+            <div className="grid grid-cols-3 gap-x-4 gap-y-1 text-[10px] font-mono text-slate-400">
+              <div className="flex justify-between gap-1.5">
+                <span className="text-slate-500">Nodos:</span>
+                <span className="text-slate-300 font-semibold">{nodesRef.current.length}/120</span>
+              </div>
+              <div className="flex justify-between gap-1.5">
+                <span className="text-slate-500">Clusters:</span>
+                <span className="text-emerald-400 font-semibold">{metrics.clusterCount}</span>
+              </div>
+              <div className="flex justify-between gap-1.5">
+                <span className="text-slate-500">Homog.:</span>
+                <span className="text-slate-300 font-semibold">{metrics.clusterQuality.toFixed(0)}%</span>
+              </div>
+              <div className="flex justify-between gap-1.5">
+                <span className="text-slate-500">Congestión:</span>
+                <span className="text-slate-300 font-semibold">{metrics.crowding.toFixed(0)}%</span>
+              </div>
+              <div className="flex justify-between gap-1.5">
+                <span className="text-slate-500">Aislam.:</span>
+                <span className="text-slate-300 font-semibold">{metrics.isolation.toFixed(0)}%</span>
+              </div>
+              <div className="flex justify-between gap-1.5">
+                <span className="text-slate-500">Conect.:</span>
+                <span className={`font-semibold ${metrics.connectivity < 20 ? 'text-yellow-400' : 'text-slate-300'}`}>
+                  {metrics.connectivity.toFixed(0)}%
                 </span>
-                <div className="text-center text-xs font-mono font-medium text-slate-300 py-1">
-                  {pulseCooldown > 0 ? `${pulseCooldown.toFixed(1)}s` : 'Listo'}
+              </div>
+            </div>
+          </div>
+
+          {/* Center Side: Interaction controls */}
+          <div className="flex flex-col items-center gap-1.5 shrink-0 max-w-md">
+            <div className="flex items-center gap-3">
+              {/* Interaction mode toggle */}
+              <div className="flex items-center bg-slate-900 border border-slate-800 rounded-xl p-1 shrink-0">
+                <button
+                  id="mode-repel-btn"
+                  onClick={() => setInteractionMode('repel')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-all flex items-center justify-center gap-1.5 ${
+                    interactionMode === 'repel' 
+                      ? 'bg-red-500/15 text-red-400 border border-red-500/20 shadow-sm' 
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Zap size={13} />
+                  <span>Pulso: Repeler</span>
+                </button>
+                <button
+                  id="mode-attract-btn"
+                  onClick={() => setInteractionMode('attract')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-all flex items-center justify-center gap-1.5 ${
+                    interactionMode === 'attract' 
+                      ? 'bg-sky-500/15 text-sky-400 border border-sky-500/20 shadow-sm' 
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Anchor size={13} />
+                  <span>Pulso: Atraer</span>
+                </button>
+              </div>
+
+              <div className="h-6 w-[1px] bg-slate-800" />
+
+              {/* Pulse status indicator */}
+              <div className="flex flex-col items-center min-w-[70px]">
+                <span className="text-[9px] font-mono uppercase tracking-wider text-slate-500">
+                  PULSO
+                </span>
+                <div className="text-xs font-mono font-medium text-slate-300">
+                  {pulseCooldown > 0 ? `${pulseCooldown.toFixed(1)}s` : 'LISTO'}
                 </div>
               </div>
-  
-              {/* Resonance activation button */}
+
+              <div className="h-6 w-[1px] bg-slate-800" />
+
+              {/* Resonance active button */}
               <button
                 id="resonance-active-btn"
                 onClick={triggerResonance}
                 disabled={resonanceCooldown > 0 || resonanceDurationLeft > 0}
-                className={`px-4 py-2 rounded-xl border flex items-center gap-2 cursor-pointer transition-all flex-1 sm:flex-initial justify-center ${
+                className={`px-4 py-1.5 rounded-xl border flex items-center gap-2 cursor-pointer transition-all justify-center shrink-0 ${
                   resonanceDurationLeft > 0 
                     ? 'bg-purple-500/20 text-purple-200 border-purple-500/50 shadow-[0_0_15px_rgba(168,85,247,0.3)] animate-pulse'
                     : resonanceCooldown > 0
@@ -2132,8 +2252,8 @@ export default function App() {
                 }`}
                 title="Resonancia: Duplica las fuerzas temporalmente (Espacio)"
               >
-                <Radio size={14} className={resonanceDurationLeft > 0 ? 'animate-pulse' : ''} />
-                <span className="text-xs font-medium tracking-wide uppercase">
+                <Radio size={13} className={resonanceDurationLeft > 0 ? 'animate-pulse' : ''} />
+                <span className="text-xs font-semibold tracking-wide uppercase">
                   {resonanceDurationLeft > 0 
                     ? `RESONANDO (${resonanceDurationLeft.toFixed(1)}s)` 
                     : resonanceCooldown > 0 
@@ -2142,50 +2262,24 @@ export default function App() {
                 </span>
               </button>
             </div>
-          </div>
-  
-          {/* Minimal interaction hint */}
-          <p className="text-[11px] sm:text-xs text-slate-500 font-mono uppercase tracking-widest mt-2 text-center px-4">
-            Click para Pulso | Mantener presionado para Anclar Gravedad
-          </p>
-        </footer>
-      )}
 
-      {/* FLOATING SIDEBAR FOR TECHNICAL METRICS (Fórmula details) */}
-      {isPlaying && !isGameOver && (
-        <aside id="tech-metrics-sidebar" className="absolute left-4 bottom-24 bg-slate-950/70 border border-slate-800 rounded-xl p-3 w-48 shadow-xl pointer-events-none z-10 font-mono hidden md:block">
-          <span className="text-[9px] uppercase tracking-wider text-sky-400 font-bold block mb-2 border-b border-slate-800 pb-1 flex items-center gap-1">
-            <Activity size={10} /> Parámetros de Red
-          </span>
-          <div className="flex flex-col gap-2 text-[10px]">
-            <div className="flex justify-between">
-              <span className="text-slate-500">Nodos:</span>
-              <span className="text-slate-300">{nodesRef.current.length} / 120</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">Agrupados (Clusters):</span>
-              <span className="text-emerald-400 font-semibold">{metrics.clusterCount}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">Homogeneidad:</span>
-              <span className="text-slate-300">{metrics.clusterQuality.toFixed(0)}%</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">Congestión:</span>
-              <span className="text-slate-300">{metrics.crowding.toFixed(0)}%</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">Aislamiento:</span>
-              <span className="text-slate-300">{metrics.isolation.toFixed(0)}%</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">Conectividad:</span>
-              <span className={`font-semibold ${metrics.connectivity < 20 ? 'text-yellow-400' : 'text-slate-300'}`}>
-                {metrics.connectivity.toFixed(0)}%
-              </span>
-            </div>
+            {/* Integrated help/interaction text inside container */}
+            <p className="text-[10px] text-slate-500 font-mono uppercase tracking-widest text-center">
+              Click para Pulso | Mantener presionado para Anclar Gravedad
+            </p>
           </div>
-        </aside>
+
+          {/* Right Side: Additional branding / game status context */}
+          <div className="flex flex-col items-end min-w-[200px] text-right">
+            <span className="text-[9px] font-mono uppercase tracking-widest text-slate-500">
+              SISTEMA DE EQUILIBRIO DE CONSTELACIONES
+            </span>
+            <span className="text-[10px] font-sans font-medium text-slate-400 flex items-center gap-1.5 mt-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Sincronizado con Nodo Central
+            </span>
+          </div>
+        </footer>
       )}
 
       {/* START INSTRUCTIONS / TUTORIAL POPUP OVERLAY */}
