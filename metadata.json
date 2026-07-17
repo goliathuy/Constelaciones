@@ -1,0 +1,6 @@
+{
+  "name": "Constelaciones",
+  "description": "Una experiencia interactiva de equilibrio dinámico para regular una red social viva entre el aislamiento y la congestión.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
