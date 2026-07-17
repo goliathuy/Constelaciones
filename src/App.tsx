@@ -37,6 +37,9 @@ import {
   calculateGameMetrics 
 } from './lib/physics';
 import { ambientSynth } from './lib/audio';
+import { AnimatePresence } from 'motion/react';
+import { TutorialModal } from './components/TutorialModal';
+import { GameOverModal } from './components/GameOverModal';
 
 export default function App() {
   // Canvas and sizing refs
@@ -115,6 +118,35 @@ export default function App() {
     totalDuration: 0
   });
 
+  // Cooldown refs for non-blocking game loop ticks
+  const pulseCooldownRef = useRef<number>(0);
+  const resonanceCooldownRef = useRef<number>(0);
+  const resonanceDurationLeftRef = useRef<number>(0);
+  const activeEventRef = useRef<GameEvent>({
+    type: 'NONE',
+    name: 'Estable',
+    description: 'La red social se comporta de forma orgánica.',
+    durationLeft: 0,
+    totalDuration: 0
+  });
+  const audioActiveRef = useRef<boolean>(false);
+  const interactionModeRef = useRef<'attract' | 'repel'>('repel');
+  const timeAccumulatorRef = useRef<number>(0);
+  const highScoreRef = useRef<number>(highScore);
+
+  // Sync state values with refs for frame-rate decoupled ticks
+  useEffect(() => {
+    audioActiveRef.current = audioActive;
+  }, [audioActive]);
+
+  useEffect(() => {
+    interactionModeRef.current = interactionMode;
+  }, [interactionMode]);
+
+  useEffect(() => {
+    highScoreRef.current = highScore;
+  }, [highScore]);
+
   // Refs for high-frequency physics variables to avoid React render lags
   const nodesRef = useRef<GameNode[]>([]);
   const metricsRef = useRef<GameMetrics>({
@@ -171,6 +203,10 @@ export default function App() {
     setPulseCooldown(0);
     setResonanceCooldown(0);
     setResonanceDurationLeft(0);
+    pulseCooldownRef.current = 0;
+    resonanceCooldownRef.current = 0;
+    resonanceDurationLeftRef.current = 0;
+    timeAccumulatorRef.current = 0;
     
     // Create baseline nodes
     const width = canvasRef.current?.width || window.innerWidth;
@@ -189,13 +225,15 @@ export default function App() {
     // Set next event countdown
     eventChangeTimerRef.current = 10.0 + Math.random() * 10.0;
     
-    setActiveEvent({
+    const initialEvent: GameEvent = {
       type: 'NONE',
       name: 'Estable',
       description: 'La red social se comporta de forma orgánica.',
       durationLeft: 0,
       totalDuration: 0
-    });
+    };
+    setActiveEvent(initialEvent);
+    activeEventRef.current = initialEvent;
 
     if (audioActive) {
       ambientSynth.updateHealth(50);
@@ -204,18 +242,18 @@ export default function App() {
 
   // Trigger global Pulse action
   const triggerPulse = (x: number, y: number) => {
-    if (pulseCooldown > 0) return;
+    if (pulseCooldownRef.current > 0) return;
     
     // Set active pulse config
     pulseRef.current = {
       x,
       y,
       time: Date.now(),
-      type: interactionMode
+      type: interactionModeRef.current
     };
 
     // Add glowing wave visual ripples
-    const ringColor = interactionMode === 'attract' ? 'rgba(56, 189, 248, 0.5)' : 'rgba(239, 68, 68, 0.5)';
+    const ringColor = interactionModeRef.current === 'attract' ? 'rgba(56, 189, 248, 0.5)' : 'rgba(239, 68, 68, 0.5)';
     ripplesRef.current.push({
       x,
       y,
@@ -238,14 +276,16 @@ export default function App() {
     }, 100);
 
     // Apply cooldown (2 seconds as per specifications)
+    pulseCooldownRef.current = 2.0;
     setPulseCooldown(2.0);
   };
 
   // Trigger Resonance action
   const triggerResonance = () => {
-    if (resonanceCooldown > 0 || resonanceDurationLeft > 0) return;
+    if (resonanceCooldownRef.current > 0 || resonanceDurationLeftRef.current > 0) return;
 
     resonanceActiveRef.current = true;
+    resonanceDurationLeftRef.current = 5.0;
     setResonanceDurationLeft(5.0); // Active for 5s
     
     // Add multiple visual shock ripples
@@ -279,7 +319,7 @@ export default function App() {
     const y = e.clientY - rect.top;
 
     // Trigger pulse on primary click
-    if (pulseCooldown <= 0) {
+    if (pulseCooldownRef.current <= 0) {
       triggerPulse(x, y);
     }
 
@@ -331,48 +371,6 @@ export default function App() {
   // Handle Event Scheduler and continuous Game loops
   useEffect(() => {
     let animationFrameId: number;
-    let secondsTimerInterval: number;
-
-    // Separate interval for timers updating every 0.1s to maintain high clock accuracy
-    if (isPlaying && !isGameOver) {
-      secondsTimerInterval = window.setInterval(() => {
-        // Cooldown tickdowns
-        setPulseCooldown(prev => Math.max(0, parseFloat((prev - 0.1).toFixed(1))));
-        
-        setResonanceDurationLeft(prev => {
-          const nextVal = Math.max(0, parseFloat((prev - 0.1).toFixed(1)));
-          if (nextVal === 0 && resonanceActiveRef.current) {
-            resonanceActiveRef.current = false;
-            // Resonance over, trigger full 15s cooldown
-            setResonanceCooldown(15.0);
-          }
-          return nextVal;
-        });
-
-        setResonanceCooldown(prev => {
-          if (resonanceDurationLeft > 0) return 0;
-          return Math.max(0, parseFloat((prev - 0.1).toFixed(1)));
-        });
-
-        // Current Event timer tickdown
-        setActiveEvent(prev => {
-          if (prev.type === 'NONE') return prev;
-          const nextDur = parseFloat((prev.durationLeft - 0.1).toFixed(1));
-          if (nextDur <= 0) {
-            // Event expired, return to NONE state
-            eventChangeTimerRef.current = 15.0 + Math.random() * 10.0; // wait 15-25s for next event
-            return {
-              type: 'NONE',
-              name: 'Estable',
-              description: 'La red social se comporta de forma orgánica.',
-              durationLeft: 0,
-              totalDuration: 0
-            };
-          }
-          return { ...prev, durationLeft: nextDur };
-        });
-      }, 100);
-    }
 
     // MAIN ANIMATED LOOP
     const tick = (timestamp: number) => {
@@ -386,6 +384,63 @@ export default function App() {
       if (canvas && ctx && isPlaying && !isGameOver) {
         const width = canvas.width;
         const height = canvas.height;
+
+        // Unified clock tick logic synchronized directly to requestAnimationFrame
+        // Updates state precisely 10 times per second (every 100ms) using delta accumulation
+        timeAccumulatorRef.current += dt;
+        if (timeAccumulatorRef.current >= 0.1) {
+          const intervalsPassed = Math.floor(timeAccumulatorRef.current / 0.1);
+          const timeStep = intervalsPassed * 0.1;
+          timeAccumulatorRef.current -= timeStep;
+
+          // Cooldown ticks
+          setPulseCooldown(prev => {
+            const nextVal = Math.max(0, parseFloat((prev - timeStep).toFixed(1)));
+            pulseCooldownRef.current = nextVal;
+            return nextVal;
+          });
+          
+          setResonanceDurationLeft(prev => {
+            const nextVal = Math.max(0, parseFloat((prev - timeStep).toFixed(1)));
+            resonanceDurationLeftRef.current = nextVal;
+            if (nextVal === 0 && resonanceActiveRef.current) {
+              resonanceActiveRef.current = false;
+              // Resonance over, trigger full 15s cooldown
+              setResonanceCooldown(15.0);
+              resonanceCooldownRef.current = 15.0;
+            }
+            return nextVal;
+          });
+
+          setResonanceCooldown(prev => {
+            if (resonanceDurationLeftRef.current > 0) return 0;
+            const nextVal = Math.max(0, parseFloat((prev - timeStep).toFixed(1)));
+            resonanceCooldownRef.current = nextVal;
+            return nextVal;
+          });
+
+          // Current Event timer tickdown
+          setActiveEvent(prev => {
+            if (prev.type === 'NONE') return prev;
+            const nextDur = parseFloat((prev.durationLeft - timeStep).toFixed(1));
+            let nextEv: GameEvent;
+            if (nextDur <= 0) {
+              // Event expired, return to NONE state
+              eventChangeTimerRef.current = 15.0 + Math.random() * 10.0; // wait 15-25s for next event
+              nextEv = {
+                type: 'NONE',
+                name: 'Estable',
+                description: 'La red social se comporta de forma orgánica.',
+                durationLeft: 0,
+                totalDuration: 0
+              };
+            } else {
+              nextEv = { ...prev, durationLeft: nextDur };
+            }
+            activeEventRef.current = nextEv;
+            return nextEv;
+          });
+        }
 
         // 1. Environmental event manager spawning
         eventChangeTimerRef.current -= dt;
@@ -411,14 +466,16 @@ export default function App() {
             desc = 'Un viento direccional arrastra la atención de toda la red constantemente.';
           }
 
-          setActiveEvent({
+          const nextEvent: GameEvent = {
             type: nextType,
             name,
             description: desc,
             durationLeft: dur,
             totalDuration: dur,
             windAngle: nextType === 'CORRIENTE' ? Math.random() * Math.PI * 2 : undefined
-          });
+          };
+          setActiveEvent(nextEvent);
+          activeEventRef.current = nextEvent;
 
           // Reset timers
           eventChangeTimerRef.current = 999999; // event will clear itself via the interval ticks
@@ -462,7 +519,7 @@ export default function App() {
           nodesRef.current,
           width,
           height,
-          activeEvent,
+          activeEventRef.current,
           resonanceActiveRef.current,
           anchorPosRef.current,
           pulseRef.current
@@ -480,7 +537,7 @@ export default function App() {
         setMetrics(nextMetrics); // Sync for HUD panels
 
         // Play procedural audio fluctuations
-        if (audioActive) {
+        if (audioActiveRef.current) {
           ambientSynth.updateHealth(nextMetrics.health);
         }
 
@@ -499,7 +556,7 @@ export default function App() {
             const rounded = Math.round(nextScore);
             
             // Sync High Score
-            if (rounded > highScore) {
+            if (rounded > highScoreRef.current) {
               setHighScore(rounded);
               try {
                 localStorage.setItem('constelaciones_high_score', rounded.toString());
@@ -537,12 +594,12 @@ export default function App() {
         ctx.fillRect(0, 0, width, height);
 
         // Render current event background hint glows
-        if (activeEvent.type !== 'NONE') {
+        if (activeEventRef.current.type !== 'NONE') {
           ctx.beginPath();
           let eventGlowColor = 'rgba(0, 0, 0, 0)';
-          if (activeEvent.type === 'EUFORIA') eventGlowColor = 'rgba(168, 85, 247, 0.03)';
-          else if (activeEvent.type === 'FRAGMENTACION') eventGlowColor = 'rgba(239, 68, 68, 0.02)';
-          else if (activeEvent.type === 'CORRIENTE') eventGlowColor = 'rgba(14, 165, 233, 0.02)';
+          if (activeEventRef.current.type === 'EUFORIA') eventGlowColor = 'rgba(168, 85, 247, 0.03)';
+          else if (activeEventRef.current.type === 'FRAGMENTACION') eventGlowColor = 'rgba(239, 68, 68, 0.02)';
+          else if (activeEventRef.current.type === 'CORRIENTE') eventGlowColor = 'rgba(14, 165, 233, 0.02)';
           ctx.fillStyle = eventGlowColor;
           ctx.arc(width / 2, height / 2, Math.max(width, height) * 0.4, 0, Math.PI * 2);
           ctx.fill();
@@ -601,21 +658,21 @@ export default function App() {
             const d = Math.hypot(dx, dy);
 
             if (d < PHYSICS_CONFIG.CONNECT_DIST) {
-              const alpha = (1 - (d / PHYSICS_CONFIG.CONNECT_DIST)) * 0.35;
-              
-              // If both nodes are part of the SAME cluster (groupId matches), draw bright harmonized line
-              if (a.groupId !== null && b.groupId !== null && a.groupId === b.groupId) {
-                ctx.strokeStyle = `rgba(52, 211, 153, ${alpha * 1.5})`; // beautiful emerald green
-                ctx.lineWidth = 1.5;
-              } else {
-                ctx.strokeStyle = `rgba(120, 180, 255, ${alpha})`; // soft stellar blue
-                ctx.lineWidth = 1.0;
-              }
+               const alpha = (1 - (d / PHYSICS_CONFIG.CONNECT_DIST)) * 0.35;
+               
+               // If both nodes are part of the SAME cluster (groupId matches), draw bright harmonized line
+               if (a.groupId !== null && b.groupId !== null && a.groupId === b.groupId) {
+                 ctx.strokeStyle = `rgba(52, 211, 153, ${alpha * 1.5})`; // beautiful emerald green
+                 ctx.lineWidth = 1.5;
+               } else {
+                 ctx.strokeStyle = `rgba(120, 180, 255, ${alpha})`; // soft stellar blue
+                 ctx.lineWidth = 1.0;
+               }
 
-              ctx.beginPath();
-              ctx.moveTo(a.x, a.y);
-              ctx.lineTo(b.x, b.y);
-              ctx.stroke();
+               ctx.beginPath();
+               ctx.moveTo(a.x, a.y);
+               ctx.lineTo(b.x, b.y);
+               ctx.stroke();
             }
           }
         }
@@ -709,7 +766,7 @@ export default function App() {
         });
 
         // 8. If Resonance is active, draw cinematic violet border vignette overlay
-        if (resonanceDurationLeft > 0) {
+        if (resonanceDurationLeftRef.current > 0) {
           const resVignette = ctx.createRadialGradient(
             width / 2, height / 2, Math.max(width, height) * 0.5,
             width / 2, height / 2, Math.max(width, height) * 0.8
@@ -733,9 +790,8 @@ export default function App() {
 
     return () => {
       cancelAnimationFrame(animationFrameId);
-      clearInterval(secondsTimerInterval);
     };
-  }, [isPlaying, isGameOver, activeEvent, audioActive, interactionMode, pulseCooldown, resonanceCooldown, resonanceDurationLeft, highScore]);
+  }, [isPlaying, isGameOver]);
 
   // Handle Resize triggers
   useEffect(() => {
@@ -1104,148 +1160,33 @@ export default function App() {
       )}
 
       {/* START INSTRUCTIONS / TUTORIAL POPUP OVERLAY */}
-      {showTutorial && (
-        <div id="tutorial-modal-overlay" className="absolute inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 shadow-2xl relative flex flex-col scrollbar-thin">
-            
-            {/* Close button if game has been already started */}
-            {isPlaying && (
-              <button 
-                id="close-tutorial-btn"
-                onClick={() => setShowTutorial(false)}
-                className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            )}
-
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-2.5 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/20">
-                <Sparkles size={24} className="animate-pulse" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold font-display tracking-tight text-white">Constelaciones</h1>
-                <p className="text-xs text-sky-400 uppercase tracking-widest font-mono">Experiencia Interactiva de Equilibrio Dinámico</p>
-              </div>
-            </div>
-
-            {isMobileMode && (
-              <div className="bg-amber-950/40 border border-amber-500/20 text-amber-300 text-[11px] rounded-xl px-3 py-2 flex items-center gap-2 mb-4">
-                <Smartphone size={14} className="flex-shrink-0 text-amber-400 animate-pulse" />
-                <span><b>Optimización de celular activa:</b> Regulamos el simulador a 55 nodos máximos para un rendimiento suave de 60fps. Puedes cambiar a modo Alto Rendimiento tocando el icono de celular en el encabezado.</span>
-              </div>
-            )}
-
-            <div className="space-y-4 text-xs text-slate-300 leading-relaxed mb-6">
-              <p>
-                La red social es un sistema vivo continuo. Tu tarea es modular su tensión manteniéndola en equilibrio en la <b>Zona Saludable (Eje 35% - 65%)</b>. Si la dejas caer al aislamiento total o colapsar en saturación, el sistema se desvanecerá.
-              </p>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                <div className="bg-slate-950/40 border border-slate-800/80 rounded-xl p-3 flex flex-col gap-1.5">
-                  <span className="text-[10px] font-mono text-red-400 uppercase font-bold tracking-wider flex items-center gap-1.5">
-                    ⚠️ Peligro de Aislamiento
-                  </span>
-                  <p className="text-[11px] text-slate-400">
-                    Ocurre si muchos nodos quedan desconectados. Suma masa atrayéndolos para formar pequeños grupos.
-                  </p>
-                </div>
-
-                <div className="bg-slate-950/40 border border-slate-800/80 rounded-xl p-3 flex flex-col gap-1.5">
-                  <span className="text-[10px] font-mono text-amber-500 uppercase font-bold tracking-wider flex items-center gap-1.5">
-                    💥 Peligro de Saturación
-                  </span>
-                  <p className="text-[11px] text-slate-400">
-                    Ocurre si se amontonan de forma caótica. Dispersa la congestión usando Pulsos de Repulsión.
-                  </p>
-                </div>
-              </div>
-
-              <div className="border-t border-slate-800/60 pt-4">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-white mb-2 flex items-center gap-1.5">
-                  🛠️ Herramientas de Modulación:
-                </h3>
-                <ul className="space-y-2 list-disc list-inside text-slate-400 text-[11px]">
-                  <li>
-                    <b className="text-slate-200">Ancla (Mantener Click)</b>: Crea un punto de gravedad temporal para agrupar nodos dispersos.
-                  </li>
-                  <li>
-                    <b className="text-slate-200">Pulso (Click Instantáneo)</b>: Envía una onda expansiva. Configura abajo si deseas que el Pulso <span className="text-red-400">Repela (dispersar)</span> o <span className="text-sky-400">Atraiga (conectar)</span>.
-                  </li>
-                  <li>
-                    <b className="text-slate-200">Resonancia (Espacio)</b>: Duplica temporalmente la fuerza de toda la red. Úsala para acelerar un reordenamiento necesario.
-                  </li>
-                </ul>
-              </div>
-            </div>
-
-            <div className="flex flex-col sm:flex-row gap-3">
-              <button
-                id="modal-play-btn"
-                onClick={() => {
-                  setShowTutorial(false);
-                  if (!isPlaying) {
-                    handleStartGame();
-                  }
-                }}
-                className="flex-1 px-5 py-3 rounded-xl bg-sky-500 text-slate-950 font-bold hover:bg-sky-400 flex items-center justify-center gap-2 shadow-lg hover:shadow-sky-500/20 transition-all cursor-pointer text-sm"
-              >
-                <Play size={16} fill="currentColor" />
-                {isPlaying ? 'Reanudar Sincronización' : 'Comenzar Sincronización'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {showTutorial && (
+          <TutorialModal
+            isPlaying={isPlaying}
+            isMobileMode={isMobileMode}
+            onClose={() => setShowTutorial(false)}
+            onPlay={() => {
+              setShowTutorial(false);
+              if (!isPlaying) {
+                handleStartGame();
+              }
+            }}
+          />
+        )}
+      </AnimatePresence>
 
       {/* GAME OVER / SYSTEM COLLAPSED OVERLAY */}
-      {isGameOver && (
-        <div id="gameover-modal-overlay" className="absolute inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-red-500/30 rounded-3xl max-w-md w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 text-center shadow-[0_0_50px_rgba(239,68,68,0.15)] flex flex-col items-center scrollbar-thin">
-            
-            <div className="p-3 rounded-full bg-red-500/10 text-red-500 border border-red-500/20 mb-4 animate-pulse">
-              <Activity size={32} />
-            </div>
-
-            <h1 className="text-2xl sm:text-3xl font-bold font-display tracking-tight text-white mb-1.5">
-              SISTEMA COLAPSADO
-            </h1>
-            <p className="text-xs text-red-400 uppercase tracking-widest font-mono mb-6">
-              Pérdida de Equilibrio Social
-            </p>
-
-            <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-4 w-full flex flex-col gap-3.5 mb-6 text-left">
-              <div className="flex justify-between items-center">
-                <span className="text-slate-400 text-xs">Sincronía Alcanzada:</span>
-                <span className="text-xl font-bold font-display text-white">{Math.round(score)}</span>
-              </div>
-              <div className="h-[1px] bg-slate-800" />
-              <div className="flex justify-between items-center">
-                <span className="text-slate-400 text-xs">Récord Máximo Histórico:</span>
-                <span className="text-lg font-bold font-display text-amber-300">{highScore}</span>
-              </div>
-              <div className="h-[1px] bg-slate-800" />
-              <div className="flex justify-between items-center">
-                <span className="text-slate-400 text-xs">Última Zona Crítica:</span>
-                <span className="text-xs font-mono font-semibold text-red-400 uppercase tracking-wider">{activeZone}</span>
-              </div>
-            </div>
-
-            <p className="text-xs text-slate-400 leading-relaxed mb-6">
-              El delicado hilo de atracción y dispersión se rompió por más de 10 segundos continuos. Restablece la sintonía para intentarlo de nuevo.
-            </p>
-
-            <button
-              id="restart-game-btn"
-              onClick={handleStartGame}
-              className="w-full px-5 py-3 rounded-xl bg-white text-slate-950 font-bold hover:bg-slate-100 flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer text-sm"
-            >
-              <RotateCcw size={16} />
-              Volver a Sincronizar
-            </button>
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {isGameOver && (
+          <GameOverModal
+            score={score}
+            highScore={highScore}
+            activeZone={activeZone}
+            onRestart={handleStartGame}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
