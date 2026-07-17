@@ -45,6 +45,18 @@ import { AnimatePresence } from 'motion/react';
 import { TutorialModal } from './components/TutorialModal';
 import { GameOverModal } from './components/GameOverModal';
 
+const getTargetNodesCount = (currentScore: number, isMobile: boolean) => {
+  if (currentScore < 250) {
+    return isMobile ? 18 : 25; // Phase 1
+  } else if (currentScore < 900) {
+    return isMobile ? 28 : 40; // Phase 2
+  } else if (currentScore < 1800) {
+    return isMobile ? 42 : 65; // Phase 3
+  } else {
+    return isMobile ? 55 : 95; // Phase 4
+  }
+};
+
 export default function App() {
   // Canvas and sizing refs
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -309,7 +321,7 @@ export default function App() {
     
     // Create baseline nodes in LOGICAL coordinates (correctly scaled by DPR)
     nodesRef.current = generateInitialNodes(
-      isMobileMode ? 25 : PHYSICS_CONFIG.INITIAL_NODES,
+      getTargetNodesCount(0, isMobileMode),
       PHYSICS_CONFIG.WORLD_WIDTH,
       PHYSICS_CONFIG.WORLD_HEIGHT
     );
@@ -347,7 +359,8 @@ export default function App() {
       ambientSynth.updateHealth(50);
     }
 
-    rollNewObjective();
+    setCurrentObjective(null);
+    currentObjectiveRef.current = null;
     setFloatingTexts([]);
     objectiveSwitchTimerRef.current = 0;
   };
@@ -634,16 +647,21 @@ export default function App() {
           eventChangeTimerRef.current = 999999; // event will clear itself via the interval ticks
         }
 
-        // 2. FIFO Node continuous spawner
+        // 2. FIFO Node continuous spawner with Dynamic Density & Intelligent Placement
         spawnTimerRef.current += dt;
-        if (spawnTimerRef.current >= PHYSICS_CONFIG.SPAWN_INTERVAL) {
+        const currentTarget = getTargetNodesCount(scoreRef.current, isMobileMode);
+        const activeNodesCount = nodesRef.current.filter(n => !n.isGhost).length;
+        
+        // Spawn faster (1.5s instead of 6.0s) if the current active node count is below the dynamic phase target
+        const spawnInterval = activeNodesCount < currentTarget ? 1.5 : PHYSICS_CONFIG.SPAWN_INTERVAL;
+
+        if (spawnTimerRef.current >= spawnInterval) {
           spawnTimerRef.current = 0;
           
-          const maxAllowed = isMobileMode ? 55 : PHYSICS_CONFIG.MAX_NODES;
-          const currentNodesCount = nodesRef.current.length;
+          const maxAllowed = currentTarget;
 
           // If limit reached, convert oldest active node to a ghost state
-          if (currentNodesCount >= maxAllowed) {
+          if (activeNodesCount >= maxAllowed) {
             // Find the oldest non-ghost node
             let oldestIndex = -1;
             let oldestLifetime = Date.now();
@@ -662,7 +680,7 @@ export default function App() {
             }
           }
 
-          // Generate new node arriving from outer borders of the virtual world, applying Phase constraints
+          // Generate new node arriving using Phase constraints & Intelligent Placement GDD guidelines
           const currentScore = scoreRef.current;
           let forcedType: 'normal' | 'influencer' | 'disruptor' | 'organizador' | 'explorador' | 'semilla' = 'normal';
           
@@ -702,7 +720,7 @@ export default function App() {
             }
           }
 
-          const newNode = generateIncomingNode(PHYSICS_CONFIG.WORLD_WIDTH, PHYSICS_CONFIG.WORLD_HEIGHT, forcedType);
+          const newNode = generateIncomingNode(PHYSICS_CONFIG.WORLD_WIDTH, PHYSICS_CONFIG.WORLD_HEIGHT, forcedType, nodesRef.current);
           nodesRef.current.push(newNode);
         }
 
@@ -1012,82 +1030,101 @@ export default function App() {
             .filter(ft => ft.opacity > 0);
         });
 
-        if (currentObjectiveRef.current) {
-          const obj = currentObjectiveRef.current;
-          if (obj.status === 'ACTIVE') {
-            const isMet = checkObjectiveCondition(obj.type, nextMetrics, nodesRef.current);
-            if (isMet) {
-              const nextProg = obj.currentProgress + dt;
-              if (nextProg >= obj.durationToHold) {
-                // Completed!
-                const updatedObj = { ...obj, currentProgress: obj.durationToHold, status: 'COMPLETED' as const };
-                setCurrentObjective(updatedObj);
-                currentObjectiveRef.current = updatedObj;
-
-                // Award bonus points!
-                setScore(prev => {
-                  const newScore = prev + 500;
-                  scoreRef.current = newScore;
-                  const rounded = Math.round(newScore);
-                  if (rounded > highScoreRef.current) {
-                    setHighScore(rounded);
-                    try {
-                      localStorage.setItem('constelaciones_high_score', rounded.toString());
-                    } catch {}
-                  }
-                  return newScore;
-                });
-
-                // Spawn beautiful floating text
-                setFloatingTexts(prev => [
-                  ...prev,
-                  {
-                    id: Math.random().toString(36).substring(2, 9),
-                    x: width / 2,
-                    y: height * 0.35,
-                    text: "✨ ¡OBJETIVO COMPLETADO! +500 PTS ✨",
-                    opacity: 1.0,
-                    color: "rgba(245, 158, 11, opacity)" // gold glowing color
-                  }
-                ]);
-
-                // Play custom synthesized melody for success!
-                if (audioActiveRef.current) {
-                  ambientSynth.playResonanceSFX();
+        // Only run/evaluate dynamic objectives in Phase 4+ (score >= 1800) GDD guidelines
+        if (currentPhaseRef.current >= 4) {
+          if (!currentObjectiveRef.current) {
+            rollNewObjective();
+            if (currentObjectiveRef.current) {
+              const nextObjName = currentObjectiveRef.current.title;
+              setFloatingTexts(prev => [
+                ...prev,
+                {
+                  id: Math.random().toString(36).substring(2, 9),
+                  x: width / 2,
+                  y: height * 0.35,
+                  text: `Meta Desbloqueada: ${nextObjName}`,
+                  opacity: 1.0,
+                  color: "rgba(251, 191, 36, opacity)" // gold
                 }
-
-                objectiveSwitchTimerRef.current = 5.0; // 5 seconds of calm before next challenge
-              } else {
-                const updatedObj = { ...obj, currentProgress: nextProg };
-                setCurrentObjective(updatedObj);
-                currentObjectiveRef.current = updatedObj;
-              }
-            } else {
-              // Reset progress if condition is broken
-              if (obj.currentProgress > 0) {
-                const updatedObj = { ...obj, currentProgress: 0 };
-                setCurrentObjective(updatedObj);
-                currentObjectiveRef.current = updatedObj;
-              }
+              ]);
             }
-          } else if (obj.status === 'COMPLETED') {
-            objectiveSwitchTimerRef.current -= dt;
-            if (objectiveSwitchTimerRef.current <= 0) {
-              rollNewObjective();
-              // Spawn starting alert text
-              if (currentObjectiveRef.current) {
-                const nextObjName = currentObjectiveRef.current.title;
-                setFloatingTexts(prev => [
-                  ...prev,
-                  {
-                    id: Math.random().toString(36).substring(2, 9),
-                    x: width / 2,
-                    y: height * 0.35,
-                    text: `Nuevo Objetivo: ${nextObjName}`,
-                    opacity: 1.0,
-                    color: "rgba(168, 85, 247, opacity)" // violet
+          } else {
+            const obj = currentObjectiveRef.current;
+            if (obj.status === 'ACTIVE') {
+              const isMet = checkObjectiveCondition(obj.type, nextMetrics, nodesRef.current);
+              if (isMet) {
+                const nextProg = obj.currentProgress + dt;
+                if (nextProg >= obj.durationToHold) {
+                  // Completed!
+                  const updatedObj = { ...obj, currentProgress: obj.durationToHold, status: 'COMPLETED' as const };
+                  setCurrentObjective(updatedObj);
+                  currentObjectiveRef.current = updatedObj;
+
+                  // Award bonus points!
+                  setScore(prev => {
+                    const newScore = prev + 500;
+                    scoreRef.current = newScore;
+                    const rounded = Math.round(newScore);
+                    if (rounded > highScoreRef.current) {
+                      setHighScore(rounded);
+                      try {
+                        localStorage.setItem('constelaciones_high_score', rounded.toString());
+                      } catch {}
+                    }
+                    return newScore;
+                  });
+
+                  // Spawn beautiful floating text
+                  setFloatingTexts(prev => [
+                    ...prev,
+                    {
+                      id: Math.random().toString(36).substring(2, 9),
+                      x: width / 2,
+                      y: height * 0.35,
+                      text: "✨ ¡OBJETIVO COMPLETADO! +500 PTS ✨",
+                      opacity: 1.0,
+                      color: "rgba(245, 158, 11, opacity)" // gold glowing color
+                    }
+                  ]);
+
+                  // Play custom synthesized melody for success!
+                  if (audioActiveRef.current) {
+                    ambientSynth.playResonanceSFX();
                   }
-                ]);
+
+                  objectiveSwitchTimerRef.current = 5.0; // 5 seconds of calm before next challenge
+                } else {
+                  const updatedObj = { ...obj, currentProgress: nextProg };
+                  setCurrentObjective(updatedObj);
+                  currentObjectiveRef.current = updatedObj;
+                }
+              } else {
+                // Reset progress if condition is broken
+                if (obj.currentProgress > 0) {
+                  const updatedObj = { ...obj, currentProgress: 0 };
+                  setCurrentObjective(updatedObj);
+                  currentObjectiveRef.current = updatedObj;
+                }
+              }
+            } else if (obj.status === 'COMPLETED') {
+              objectiveSwitchTimerRef.current -= dt;
+              if (objectiveSwitchTimerRef.current <= 0) {
+                rollNewObjective();
+                // Spawn starting alert text
+                if (currentObjectiveRef.current) {
+                  const nextObjName = currentObjectiveRef.current.title;
+                  setFloatingTexts(prev => [
+                    ...prev,
+                    {
+                      id: Math.random().toString(36).substring(2, 9),
+                      x: width / 2,
+                      y: height * 0.35,
+                      text: `Nuevo Objetivo: ${nextObjName}`,
+                      opacity: 1.0,
+                      color: "rgba(168, 85, 247, opacity)" // violet
+                    }
+                  ]);
+                }
               }
             }
           }

@@ -9,46 +9,82 @@ import { GameNode, GameMetrics, PHYSICS_CONFIG, EventType, GameEvent } from '../
 export function generateIncomingNode(
   width: number, 
   height: number,
-  forcedType?: 'normal' | 'influencer' | 'disruptor' | 'organizador' | 'explorador' | 'semilla'
+  forcedType?: 'normal' | 'influencer' | 'disruptor' | 'organizador' | 'explorador' | 'semilla',
+  currentNodes?: GameNode[]
 ): GameNode {
   const id = Math.random().toString(36).substring(2, 9);
   
-  // Choose a random border: 0 = Top, 1 = Right, 2 = Bottom, 3 = Left
-  const border = Math.floor(Math.random() * 4);
   let x = 0;
   let y = 0;
   let vx = 0;
   let vy = 0;
   
-  const speed = 0.5 + Math.random() * 1.0;
-  const padding = 10;
+  let usedIntelligentSpawn = false;
 
-  switch (border) {
-    case 0: // Top
-      x = padding + Math.random() * (width - padding * 2);
-      y = -10;
-      vx = (Math.random() - 0.5) * speed;
-      vy = Math.random() * speed + 0.5;
-      break;
-    case 1: // Right
-      x = width + 10;
-      y = padding + Math.random() * (height - padding * 2);
-      vx = -(Math.random() * speed + 0.5);
-      vy = (Math.random() - 0.5) * speed;
-      break;
-    case 2: // Bottom
-      x = padding + Math.random() * (width - padding * 2);
-      y = height + 10;
-      vx = (Math.random() - 0.5) * speed;
-      vy = -(Math.random() * speed + 0.5);
-      break;
-    case 3: // Left
-    default:
-      x = -10;
-      y = padding + Math.random() * (height - padding * 2);
-      vx = Math.random() * speed + 0.5;
-      vy = (Math.random() - 0.5) * speed;
-      break;
+  if (currentNodes && currentNodes.length > 0) {
+    const clusteredNodes = currentNodes.filter(n => !n.isGhost && n.groupId !== null);
+    
+    // 70% chance to spawn near an existing cluster, 30% to spawn in a remote/empty area
+    if (clusteredNodes.length > 0 && Math.random() < 0.70) {
+      const targetNode = clusteredNodes[Math.floor(Math.random() * clusteredNodes.length)];
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 100 + Math.random() * 150; // 100 to 250 px
+      
+      x = (targetNode.x + Math.cos(angle) * dist + width) % width;
+      y = (targetNode.y + Math.sin(angle) * dist + height) % height;
+      
+      // Gentle drift velocity
+      vx = (Math.random() - 0.5) * 1.0;
+      vy = (Math.random() - 0.5) * 1.0;
+      
+      usedIntelligentSpawn = true;
+    } else {
+      // 30% chance, or no clusters: spawn in a remote empty zone
+      const pos = findEmptyPosition(currentNodes, width, height);
+      x = pos.x;
+      y = pos.y;
+      
+      // Random velocity
+      vx = (Math.random() - 0.5) * 1.5;
+      vy = (Math.random() - 0.5) * 1.5;
+      
+      usedIntelligentSpawn = true;
+    }
+  }
+
+  if (!usedIntelligentSpawn) {
+    // Choose a random border: 0 = Top, 1 = Right, 2 = Bottom, 3 = Left
+    const border = Math.floor(Math.random() * 4);
+    const speed = 0.5 + Math.random() * 1.0;
+    const padding = 10;
+
+    switch (border) {
+      case 0: // Top
+        x = padding + Math.random() * (width - padding * 2);
+        y = -10;
+        vx = (Math.random() - 0.5) * speed;
+        vy = Math.random() * speed + 0.5;
+        break;
+      case 1: // Right
+        x = width + 10;
+        y = padding + Math.random() * (height - padding * 2);
+        vx = -(Math.random() * speed + 0.5);
+        vy = (Math.random() - 0.5) * speed;
+        break;
+      case 2: // Bottom
+        x = padding + Math.random() * (width - padding * 2);
+        y = height + 10;
+        vx = (Math.random() - 0.5) * speed;
+        vy = -(Math.random() * speed + 0.5);
+        break;
+      case 3: // Left
+      default:
+        x = -10;
+        y = padding + Math.random() * (height - padding * 2);
+        vx = Math.random() * speed + 0.5;
+        vy = (Math.random() - 0.5) * speed;
+        break;
+    }
   }
 
   let specialType: 'normal' | 'influencer' | 'disruptor' | 'organizador' | 'explorador' | 'semilla' = 'normal';
