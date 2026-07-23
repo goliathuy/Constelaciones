@@ -22,7 +22,8 @@ import {
   Cpu,
   Smartphone,
   Radio,
-  Target
+  Target,
+  Clock
 } from 'lucide-react';
 import { 
   GameNode, 
@@ -31,7 +32,11 @@ import {
   EventType, 
   PHYSICS_CONFIG, 
   SystemZone,
-  DynamicObjective
+  DynamicObjective,
+  GameMode,
+  GamePreset,
+  PartidaResult,
+  PRESET_ESTANDAR
 } from './types';
 import { 
   generateInitialNodes, 
@@ -45,7 +50,18 @@ import { AnimatePresence } from 'motion/react';
 import { TutorialModal } from './components/TutorialModal';
 import { GameOverModal } from './components/GameOverModal';
 
-const getTargetNodesCount = (currentScore: number, isMobile: boolean) => {
+const getTargetNodesCount = (
+  currentScore: number, 
+  isMobile: boolean, 
+  mode: GameMode = 'endless', 
+  fixedPhase: number = 2
+) => {
+  if (mode === 'partida') {
+    if (fixedPhase === 1) return isMobile ? 18 : 25;
+    if (fixedPhase === 2) return isMobile ? 28 : 40;
+    if (fixedPhase === 3) return isMobile ? 42 : 65;
+    return isMobile ? 55 : 95;
+  }
   if (currentScore < 250) {
     return isMobile ? 18 : 25; // Phase 1
   } else if (currentScore < 900) {
@@ -58,6 +74,24 @@ const getTargetNodesCount = (currentScore: number, isMobile: boolean) => {
 };
 
 export default function App() {
+  // Game Mode State & Refs
+  const [gameMode, setGameMode] = useState<GameMode>('partida');
+  const gameModeRef = useRef<GameMode>('partida');
+
+  const [selectedPreset, setSelectedPreset] = useState<GamePreset>(PRESET_ESTANDAR);
+  const selectedPresetRef = useRef<GamePreset>(PRESET_ESTANDAR);
+
+  const [partidaTimeLeft, setPartidaTimeLeft] = useState<number>(75.0);
+  const partidaTimeLeftRef = useRef<number>(75.0);
+
+  const [partidaObjectiveIndex, setPartidaObjectiveIndex] = useState<number>(0);
+  const partidaObjectiveIndexRef = useRef<number>(0);
+
+  const [partidaTransitionMessage, setPartidaTransitionMessage] = useState<string | null>(null);
+  const partidaTransitionTimerRef = useRef<number>(0);
+
+  const [partidaResult, setPartidaResult] = useState<PartidaResult | null>(null);
+
   // Canvas and sizing refs
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -305,12 +339,19 @@ export default function App() {
   };
 
   // Start / Reset Game
-  const handleStartGame = () => {
+  const handleStartGame = (mode: GameMode = gameMode, preset: GamePreset = selectedPreset) => {
+    setGameMode(mode);
+    gameModeRef.current = mode;
+    setSelectedPreset(preset);
+    selectedPresetRef.current = preset;
+
     setIsGameOver(false);
     setIsPlaying(true);
+    setPartidaResult(null);
+
     setScore(0);
     scoreRef.current = 0;
-    currentPhaseRef.current = 1;
+    
     seedSpawnCooldownRef.current = 5.0;
     setCriticalSecondsLeft(10.0);
     setPulseCooldown(0);
@@ -323,9 +364,45 @@ export default function App() {
     setGraceTimer(15.0);
     graceTimerRef.current = 15.0;
     
-    // Create baseline nodes in LOGICAL coordinates (correctly scaled by DPR)
+    if (mode === 'partida') {
+      currentPhaseRef.current = preset.fixedPhase; // Fixed Phase 2 for Estándar
+      partidaTimeLeftRef.current = preset.sessionDuration;
+      setPartidaTimeLeft(preset.sessionDuration);
+
+      partidaObjectiveIndexRef.current = 0;
+      setPartidaObjectiveIndex(0);
+      partidaTransitionTimerRef.current = 0;
+      setPartidaTransitionMessage(null);
+
+      if (preset.objectivesSequence.length > 0) {
+        const firstStep = preset.objectivesSequence[0];
+        const firstObj: DynamicObjective = {
+          id: firstStep.id,
+          title: firstStep.title,
+          description: firstStep.description,
+          type: firstStep.type,
+          targetValue: firstStep.targetValue,
+          currentProgress: 0,
+          durationToHold: firstStep.durationToHold,
+          status: 'ACTIVE'
+        };
+        setCurrentObjective(firstObj);
+        currentObjectiveRef.current = firstObj;
+      } else {
+        setCurrentObjective(null);
+        currentObjectiveRef.current = null;
+      }
+    } else {
+      currentPhaseRef.current = 1;
+      setCurrentObjective(null);
+      currentObjectiveRef.current = null;
+    }
+
+    // Create baseline nodes in LOGICAL coordinates
+    const initialPhase = mode === 'partida' ? preset.fixedPhase : 1;
+    const targetCount = getTargetNodesCount(0, isMobileMode, mode, initialPhase);
     nodesRef.current = generateInitialNodes(
-      getTargetNodesCount(0, isMobileMode),
+      targetCount,
       PHYSICS_CONFIG.WORLD_WIDTH,
       PHYSICS_CONFIG.WORLD_HEIGHT
     );
@@ -363,8 +440,6 @@ export default function App() {
       ambientSynth.updateHealth(50);
     }
 
-    setCurrentObjective(null);
-    currentObjectiveRef.current = null;
     setFloatingTexts([]);
     objectiveSwitchTimerRef.current = 0;
   };
@@ -659,8 +734,35 @@ export default function App() {
 
         // 2. FIFO Node continuous spawner with Dynamic Density & Intelligent Placement
         spawnTimerRef.current += dt;
-        const currentTarget = getTargetNodesCount(scoreRef.current, isMobileMode);
+        const currentTarget = getTargetNodesCount(
+          scoreRef.current, 
+          isMobileMode, 
+          gameModeRef.current, 
+          selectedPresetRef.current.fixedPhase
+        );
         const activeNodesCount = nodesRef.current.filter(n => !n.isGhost).length;
+
+        // Session Timer Countdown for Partida Mode
+        if (gameModeRef.current === 'partida') {
+          partidaTimeLeftRef.current = Math.max(0, partidaTimeLeftRef.current - dt);
+          setPartidaTimeLeft(partidaTimeLeftRef.current);
+
+          if (partidaTimeLeftRef.current <= 0 && !isGameOver) {
+            const completedCount = partidaObjectiveIndexRef.current;
+            const totalObjs = selectedPresetRef.current.objectivesSequence.length;
+            const isWin = completedCount >= totalObjs;
+
+            setPartidaResult({
+              status: isWin ? 'VICTORY' : 'PARTIAL',
+              objectivesCompletedCount: completedCount,
+              totalObjectives: totalObjs,
+              timeRemainingBonus: 0,
+              score: Math.round(scoreRef.current),
+              timeElapsed: selectedPresetRef.current.sessionDuration
+            });
+            setIsGameOver(true);
+          }
+        }
         
         // Spawn faster (1.5s instead of 6.0s) if the current active node count is below the dynamic phase target
         const spawnInterval = activeNodesCount < currentTarget ? 1.5 : PHYSICS_CONFIG.SPAWN_INTERVAL;
@@ -698,7 +800,17 @@ export default function App() {
             n => !n.isGhost && n.specialType && n.specialType !== 'normal' && n.specialType !== 'semilla'
           ).length;
 
-          if (currentScore < 250) {
+          if (gameModeRef.current === 'partida') {
+            // In Partida mode, Phase is fixed to Phase 2 (or preset phase)
+            // Ensure Objective 3 (CONECTAR_ESPECIALES) has special nodes present
+            if (currentObjectiveRef.current?.type === 'CONECTAR_ESPECIALES' && activeSpecialCount === 0) {
+              forcedType = 'influencer';
+            } else if (activeSpecialCount < 1 && Math.random() < 0.25) {
+              forcedType = Math.random() < 0.5 ? 'explorador' : 'organizador';
+            } else {
+              forcedType = 'normal';
+            }
+          } else if (currentScore < 250) {
             // Phase 1: only normal nodes
             forcedType = 'normal';
           } else if (currentScore < 900) {
@@ -796,6 +908,16 @@ export default function App() {
             setCriticalSecondsLeft(prev => {
               const nextVal = Math.max(0, prev - dt);
               if (nextVal <= 0) {
+                if (gameModeRef.current === 'partida') {
+                  setPartidaResult({
+                    status: 'GAME_OVER',
+                    objectivesCompletedCount: partidaObjectiveIndexRef.current,
+                    totalObjectives: selectedPresetRef.current.objectivesSequence.length,
+                    timeRemainingBonus: 0,
+                    score: Math.round(scoreRef.current),
+                    timeElapsed: selectedPresetRef.current.sessionDuration - partidaTimeLeftRef.current
+                  });
+                }
                 setIsGameOver(true);
               }
               return nextVal;
@@ -806,45 +928,47 @@ export default function App() {
           setCriticalSecondsLeft(10.0);
         }
 
-        // 6.2. Ecosystem Evolution Phase transition checks
-        const nextScore = scoreRef.current;
-        let nextPhaseLevel = 1;
-        if (nextScore >= 1800) nextPhaseLevel = 4;
-        else if (nextScore >= 900) nextPhaseLevel = 3;
-        else if (nextScore >= 250) nextPhaseLevel = 2;
+        // 6.2. Ecosystem Evolution Phase transition checks (Endless Mode)
+        if (gameModeRef.current === 'endless') {
+          const nextScore = scoreRef.current;
+          let nextPhaseLevel = 1;
+          if (nextScore >= 1800) nextPhaseLevel = 4;
+          else if (nextScore >= 900) nextPhaseLevel = 3;
+          else if (nextScore >= 250) nextPhaseLevel = 2;
 
-        if (nextPhaseLevel !== currentPhaseRef.current) {
-          currentPhaseRef.current = nextPhaseLevel;
-          
-          // Spawn beautiful evolution banner in HUD floating text
-          const pInfo = getEcosystemPhase(nextScore);
-          setFloatingTexts(prev => [
-            ...prev,
-            {
-              id: Math.random().toString(36).substring(2, 9),
-              x: width / 2,
-              y: height * 0.3,
-              text: `✨ ¡EVOLUCIÓN DEL ECOSISTEMA! ✨`,
-              opacity: 1.0,
-              color: "rgba(251, 191, 36, opacity)" // gold
-            },
-            {
-              id: Math.random().toString(36).substring(2, 9),
-              x: width / 2,
-              y: height * 0.36,
-              text: pInfo.name,
-              opacity: 1.0,
-              color: "rgba(255, 255, 255, opacity)"
+          if (nextPhaseLevel !== currentPhaseRef.current) {
+            currentPhaseRef.current = nextPhaseLevel;
+            
+            // Spawn beautiful evolution banner in HUD floating text
+            const pInfo = getEcosystemPhase(nextScore);
+            setFloatingTexts(prev => [
+              ...prev,
+              {
+                id: Math.random().toString(36).substring(2, 9),
+                x: width / 2,
+                y: height * 0.3,
+                text: `✨ ¡EVOLUCIÓN DEL ECOSISTEMA! ✨`,
+                opacity: 1.0,
+                color: "rgba(251, 191, 36, opacity)" // gold
+              },
+              {
+                id: Math.random().toString(36).substring(2, 9),
+                x: width / 2,
+                y: height * 0.36,
+                text: pInfo.name,
+                opacity: 1.0,
+                color: "rgba(255, 255, 255, opacity)"
+              }
+            ]);
+
+            if (audioActiveRef.current) {
+              ambientSynth.playResonanceSFX();
             }
-          ]);
-
-          if (audioActiveRef.current) {
-            ambientSynth.playResonanceSFX();
           }
         }
 
         // 6.3. Seed Spawn Logic (Phase 4 only)
-        if (nextPhaseLevel === 4) {
+        if (currentPhaseRef.current === 4) {
           const hasActiveSeed = nodesRef.current.some(n => !n.isGhost && n.specialType === 'semilla');
           if (!hasActiveSeed) {
             seedSpawnCooldownRef.current -= dt;
@@ -1042,8 +1166,114 @@ export default function App() {
             .filter(ft => ft.opacity > 0);
         });
 
-        // Only run/evaluate dynamic objectives in Phase 4+ (score >= 1800) GDD guidelines
-        if (currentPhaseRef.current >= 4) {
+        // Dynamic Objectives evaluation
+        if (gameModeRef.current === 'partida') {
+          if (partidaTransitionTimerRef.current > 0) {
+            partidaTransitionTimerRef.current -= dt;
+            if (partidaTransitionTimerRef.current <= 0) {
+              setPartidaTransitionMessage(null);
+              const nextStep = selectedPresetRef.current.objectivesSequence[partidaObjectiveIndexRef.current];
+              if (nextStep) {
+                const nextObj: DynamicObjective = {
+                  id: nextStep.id,
+                  title: nextStep.title,
+                  description: nextStep.description,
+                  type: nextStep.type,
+                  targetValue: nextStep.targetValue,
+                  currentProgress: 0,
+                  durationToHold: nextStep.durationToHold,
+                  status: 'ACTIVE'
+                };
+                setCurrentObjective(nextObj);
+                currentObjectiveRef.current = nextObj;
+              }
+            }
+          } else if (currentObjectiveRef.current && currentObjectiveRef.current.status === 'ACTIVE') {
+            const obj = currentObjectiveRef.current;
+            const isMet = checkObjectiveCondition(obj.type, nextMetrics, nodesRef.current);
+            if (isMet) {
+              const nextProg = obj.currentProgress + dt;
+              if (nextProg >= obj.durationToHold) {
+                // Step completed!
+                const updatedObj = { ...obj, currentProgress: obj.durationToHold, status: 'COMPLETED' as const };
+                setCurrentObjective(updatedObj);
+                currentObjectiveRef.current = updatedObj;
+
+                // Award bonus +500
+                setScore(prev => {
+                  const newScore = prev + 500;
+                  scoreRef.current = newScore;
+                  const rounded = Math.round(newScore);
+                  if (rounded > highScoreRef.current) {
+                    setHighScore(rounded);
+                    try { localStorage.setItem('constelaciones_high_score', rounded.toString()); } catch {}
+                  }
+                  return newScore;
+                });
+
+                partidaObjectiveIndexRef.current += 1;
+                setPartidaObjectiveIndex(partidaObjectiveIndexRef.current);
+
+                const totalObjs = selectedPresetRef.current.objectivesSequence.length;
+                if (partidaObjectiveIndexRef.current >= totalObjs) {
+                  // ALL OBJECTIVES COMPLETED - VICTORY!
+                  const timeRemaining = partidaTimeLeftRef.current;
+                  const timeBonus = Math.round(timeRemaining * 10);
+                  const finalScore = Math.round(scoreRef.current + timeBonus);
+
+                  scoreRef.current = finalScore;
+                  setScore(finalScore);
+                  if (finalScore > highScoreRef.current) {
+                    setHighScore(finalScore);
+                    try { localStorage.setItem('constelaciones_high_score', finalScore.toString()); } catch {}
+                  }
+
+                  setPartidaResult({
+                    status: 'VICTORY',
+                    objectivesCompletedCount: totalObjs,
+                    totalObjectives: totalObjs,
+                    timeRemainingBonus: timeBonus,
+                    score: finalScore,
+                    timeElapsed: selectedPresetRef.current.sessionDuration - timeRemaining
+                  });
+                  setIsGameOver(true);
+                } else {
+                  // Transition to next objective step
+                  partidaTransitionTimerRef.current = 1.5;
+                  const nextStep = selectedPresetRef.current.objectivesSequence[partidaObjectiveIndexRef.current];
+                  setPartidaTransitionMessage(`¡Objetivo ${partidaObjectiveIndexRef.current}/${totalObjs} completado! Siguiente: ${nextStep.title}`);
+
+                  setFloatingTexts(prev => [
+                    ...prev,
+                    {
+                      id: Math.random().toString(36).substring(2, 9),
+                      x: width / 2,
+                      y: height * 0.35,
+                      text: `✨ ¡OBJETIVO ${partidaObjectiveIndexRef.current}/${totalObjs} CUMPLIDO! (+500 PTS) ✨`,
+                      opacity: 1.0,
+                      color: "rgba(245, 158, 11, opacity)"
+                    }
+                  ]);
+
+                  if (audioActiveRef.current) {
+                    ambientSynth.playResonanceSFX();
+                  }
+                }
+              } else {
+                const updatedObj = { ...obj, currentProgress: nextProg };
+                setCurrentObjective(updatedObj);
+                currentObjectiveRef.current = updatedObj;
+              }
+            } else {
+              // Decay progress slightly if condition is broken
+              if (obj.currentProgress > 0) {
+                const updatedObj = { ...obj, currentProgress: Math.max(0, obj.currentProgress - dt * 0.5) };
+                setCurrentObjective(updatedObj);
+                currentObjectiveRef.current = updatedObj;
+              }
+            }
+          }
+        } else if (currentPhaseRef.current >= 4) {
           if (!currentObjectiveRef.current) {
             rollNewObjective();
             if (currentObjectiveRef.current) {
@@ -1723,7 +1953,7 @@ export default function App() {
       <header className={`absolute top-0 inset-x-0 px-4 sm:px-6 py-4 safe-pt flex justify-between items-center pointer-events-none z-10 transition-all duration-300 ${isHolding ? 'opacity-20' : 'opacity-100'}`}>
         
         {/* Score & Stats Card */}
-        <div className="bg-slate-950/75 backdrop-blur-md border border-slate-800 rounded-xl px-2.5 py-1.5 sm:px-4 sm:py-3 pointer-events-auto flex gap-2.5 sm:gap-6 items-center shadow-lg">
+        <div className="bg-slate-950/75 backdrop-blur-md border border-slate-800 rounded-xl px-2.5 py-1.5 sm:px-4 sm:py-3 pointer-events-auto flex gap-2.5 sm:gap-5 items-center shadow-lg">
           <div className="flex flex-col">
             <span className="text-[10px] sm:text-xs font-mono uppercase tracking-widest text-slate-400 flex items-center gap-1">
               <TrendingUp size={11} className="text-emerald-400" /> {isMobileMode ? 'Sincronía' : 'Sincronía Actual'}
@@ -1741,6 +1971,19 @@ export default function App() {
               {highScore}
             </span>
           </div>
+          {gameMode === 'partida' && (
+            <>
+              <div className="h-8 w-[1px] bg-slate-800" />
+              <div className="flex flex-col">
+                <span className="text-[10px] sm:text-xs font-mono uppercase tracking-widest text-cyan-400 flex items-center gap-1 font-bold">
+                  <Clock size={11} className="text-cyan-400 animate-pulse" /> Tiempo
+                </span>
+                <span className={`text-lg sm:text-2xl font-bold font-mono tracking-tight ${partidaTimeLeft < 30 ? 'text-rose-400 animate-pulse' : 'text-cyan-200'}`}>
+                  {Math.floor(partidaTimeLeft / 60)}:{(Math.floor(partidaTimeLeft) % 60).toString().padStart(2, '0')}
+                </span>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Center: Ecosystem Phase & Compact Zone Banner Gauge (Desktop Only) */}
@@ -2009,12 +2252,45 @@ export default function App() {
           </div>
         )}
 
+        {/* ACTIVE RANDOM ENVIRONMENTAL THREAT PANEL (Integrated in vertical HUD stack) */}
+        {activeEvent.type !== 'NONE' && (
+          <div className="mb-2 w-full max-w-xs sm:max-w-md bg-indigo-950/85 backdrop-blur-md border border-indigo-500/40 rounded-xl px-3 py-2 flex items-center justify-between gap-2.5 shadow-xl relative overflow-hidden pointer-events-none animate-pulse">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="p-1 rounded-lg bg-indigo-500/20 text-indigo-300 flex items-center justify-center shrink-0">
+                <Compass size={14} className="animate-spin" style={{ animationDuration: '6s' }} />
+              </div>
+              <div className="flex flex-col min-w-0 text-left">
+                <span className="text-[9px] font-mono uppercase tracking-widest text-indigo-400 font-bold">EVENTO ACTIVO</span>
+                <span className="text-xs font-bold text-indigo-100 truncate">{activeEvent.name}</span>
+                {!isMobileMode && (
+                  <p className="text-[10px] text-indigo-200/80 leading-tight truncate">{activeEvent.description}</p>
+                )}
+              </div>
+            </div>
+            <span className="text-xs font-mono font-bold text-indigo-300 shrink-0">
+              Quedan {activeEvent.durationLeft.toFixed(1)}s
+            </span>
+          </div>
+        )}
+
         {/* OBJECTIVE HUD CARD */}
+        {gameMode === 'partida' && partidaTransitionMessage && (
+          <div className="mt-2 w-full max-w-xs sm:max-w-md bg-purple-950/90 backdrop-blur-md border border-amber-500/50 rounded-xl p-2.5 text-center shadow-xl animate-bounce pointer-events-auto">
+            <span className="text-xs font-bold text-amber-300 font-display">
+              {partidaTransitionMessage}
+            </span>
+          </div>
+        )}
+        
         {currentObjective && (
-          <div className="mt-2.5 w-full max-w-xs sm:max-w-md bg-slate-950/85 backdrop-blur-md border border-purple-900/40 rounded-xl p-2.5 sm:p-3 flex items-center justify-between gap-3 shadow-xl pointer-events-auto transition-all animate-fade-in">
+          <div className="mt-2 w-full max-w-xs sm:max-w-md bg-slate-950/85 backdrop-blur-md border border-purple-900/40 rounded-xl p-2.5 sm:p-3 flex items-center justify-between gap-3 shadow-xl pointer-events-auto transition-all animate-fade-in">
             <div className="flex flex-col flex-1 min-w-0 text-left">
               <span className="text-[9px] font-mono uppercase tracking-widest text-purple-400 font-bold flex items-center gap-1">
-                <Target size={11} className="text-purple-400 animate-pulse shrink-0" /> OBJETIVO DINÁMICO
+                <Target size={11} className="text-purple-400 animate-pulse shrink-0" /> 
+                {gameMode === 'partida' 
+                  ? `OBJETIVO ${partidaObjectiveIndex + 1}/${selectedPreset.objectivesSequence.length}`
+                  : 'OBJETIVO DINÁMICO'
+                }
               </span>
               <span className="text-xs sm:text-sm font-bold text-white tracking-tight truncate mt-0.5">
                 {currentObjective.title}
@@ -2040,39 +2316,7 @@ export default function App() {
             </div>
           </div>
         )}
-  
-        {/* ACTIVE RANDOM ENVIRONMENTAL THREAT PANEL (Desktop Only) */}
-        {!isMobileMode && activeEvent.type !== 'NONE' && (
-          <div className="mt-3 w-full max-w-sm bg-indigo-950/70 backdrop-blur-md border border-indigo-500/30 rounded-xl p-3 flex gap-3 shadow-xl relative overflow-hidden animate-breathing pointer-events-none">
-            <div className="absolute inset-y-0 left-0 w-1 bg-indigo-400" />
-            <div className="p-1 rounded-lg bg-indigo-500/20 text-indigo-300 flex items-center justify-center self-start">
-              <Compass size={16} className="animate-spin" style={{ animationDuration: '8s' }} />
-            </div>
-            <div className="flex flex-col flex-1">
-              <div className="flex justify-between items-baseline mb-0.5">
-                <span className="text-xs font-semibold text-indigo-100">{activeEvent.name}</span>
-                <span className="text-[11px] sm:text-xs font-mono text-indigo-300">Quedan {activeEvent.durationLeft.toFixed(1)}s</span>
-              </div>
-              <p className="text-[11px] sm:text-xs text-indigo-200/80 leading-relaxed leading-snug">
-                {activeEvent.description}
-              </p>
-            </div>
-          </div>
-        )}
       </div>
-
-      {/* ACTIVE RANDOM ENVIRONMENTAL THREAT PANEL (Mobile Floating Pill Toast) */}
-      {isMobileMode && activeEvent.type !== 'NONE' && (
-        <div className="absolute top-[calc(4.5rem+env(safe-area-inset-top,0px))] right-4 z-10 max-w-[160px] bg-indigo-950/85 backdrop-blur-md border border-indigo-500/30 rounded-xl px-2.5 py-1.5 flex gap-2 shadow-xl items-center pointer-events-none animate-pulse">
-          <div className="p-1 rounded-lg bg-indigo-500/20 text-indigo-300 flex items-center justify-center">
-            <Compass size={12} className="animate-spin" style={{ animationDuration: '6s' }} />
-          </div>
-          <div className="flex flex-col min-w-0">
-            <span className="text-[10px] font-bold text-indigo-100 truncate leading-none mb-0.5">{activeEvent.name}</span>
-            <span className="text-[9px] font-mono text-indigo-300/90 leading-none">Quedan {activeEvent.durationLeft.toFixed(0)}s</span>
-          </div>
-        </div>
-      )}
 
       {/* BOTTOM CONTROL ACTIONS / UTILITY FOOTER DOCK */}
       {isMobileMode ? (
@@ -2288,12 +2532,12 @@ export default function App() {
           <TutorialModal
             isPlaying={isPlaying}
             isMobileMode={isMobileMode}
+            selectedMode={gameMode}
+            onSelectMode={(mode) => setGameMode(mode)}
             onClose={() => setShowTutorial(false)}
             onPlay={() => {
               setShowTutorial(false);
-              if (!isPlaying) {
-                handleStartGame();
-              }
+              handleStartGame(gameMode);
             }}
           />
         )}
@@ -2306,7 +2550,10 @@ export default function App() {
             score={score}
             highScore={highScore}
             activeZone={activeZone}
-            onRestart={handleStartGame}
+            gameMode={gameMode}
+            partidaResult={partidaResult}
+            onRestart={(m) => handleStartGame(m || gameMode)}
+            onSwitchMode={(newMode) => handleStartGame(newMode)}
           />
         )}
       </AnimatePresence>

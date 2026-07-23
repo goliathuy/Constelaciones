@@ -1,10 +1,13 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Sparkles, Smartphone, Play, X } from 'lucide-react';
+import { Sparkles, Smartphone, Play, X, Target, TrendingUp } from 'lucide-react';
+import { GameMode } from '../types';
 
 interface TutorialModalProps {
   isPlaying: boolean;
   isMobileMode: boolean;
+  selectedMode: GameMode;
+  onSelectMode: (mode: GameMode) => void;
   onClose: () => void;
   onPlay: () => void;
 }
@@ -12,6 +15,8 @@ interface TutorialModalProps {
 export const TutorialModal: React.FC<TutorialModalProps> = ({
   isPlaying,
   isMobileMode,
+  selectedMode,
+  onSelectMode,
   onClose,
   onPlay,
 }) => {
@@ -49,6 +54,60 @@ export const TutorialModal: React.FC<TutorialModalProps> = ({
           <div>
             <h1 className="text-2xl font-bold font-display tracking-tight text-white">Constelaciones</h1>
             <p className="text-xs text-sky-400 uppercase tracking-widest font-mono">Experiencia Interactiva de Equilibrio Dinámico</p>
+          </div>
+        </div>
+
+        {/* Mode Selector Options */}
+        <div className="mb-4 bg-slate-950/60 p-3 rounded-2xl border border-slate-800/90">
+          <span className="text-[10px] font-mono uppercase tracking-widest text-slate-400 font-bold block mb-2">
+            MODO DE JUEGO:
+          </span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <button
+              type="button"
+              id="select-mode-partida-btn"
+              onClick={() => onSelectMode('partida')}
+              className={`p-3 rounded-xl border text-left cursor-pointer transition-all flex flex-col gap-1 ${
+                selectedMode === 'partida'
+                  ? 'bg-sky-500/15 border-sky-500/50 text-white shadow-md ring-1 ring-sky-500/30'
+                  : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold font-display flex items-center gap-1.5 text-sky-400">
+                  <Target size={14} /> Modo Partida (75s)
+                </span>
+                {selectedMode === 'partida' && (
+                  <span className="text-[9px] bg-sky-500 text-slate-950 font-bold px-1.5 py-0.5 rounded uppercase">Seleccionado</span>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-300 leading-snug">
+                Preset Estándar: Sesión de 75s con 3 objetivos secuenciales en Fase 2.
+              </p>
+            </button>
+
+            <button
+              type="button"
+              id="select-mode-endless-btn"
+              onClick={() => onSelectMode('endless')}
+              className={`p-3 rounded-xl border text-left cursor-pointer transition-all flex flex-col gap-1 ${
+                selectedMode === 'endless'
+                  ? 'bg-purple-500/15 border-purple-500/50 text-white shadow-md ring-1 ring-purple-500/30'
+                  : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold font-display flex items-center gap-1.5 text-purple-400">
+                  <TrendingUp size={14} /> Modo Endless
+                </span>
+                {selectedMode === 'endless' && (
+                  <span className="text-[9px] bg-purple-500 text-slate-950 font-bold px-1.5 py-0.5 rounded uppercase">Seleccionado</span>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-300 leading-snug">
+                Supervivencia indefinida con progresión libre de 4 Fases por puntaje.
+              </p>
+            </button>
           </div>
         </div>
 

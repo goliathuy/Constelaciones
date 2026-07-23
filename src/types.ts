@@ -22,6 +22,69 @@ export interface GameNode {
   seedTimer?: number; // Tracks sprouting progress for community seeds
 }
 
+export type GameMode = 'endless' | 'partida';
+
+export interface ObjectivePresetStep {
+  id: string;
+  title: string;
+  description: string;
+  type: 'MANTENER_COMUNIDADES' | 'MANTENER_SINCRONIA' | 'EVITAR_CONGESTION' | 'EVITAR_AISLAMIENTO' | 'CONECTAR_ESPECIALES';
+  targetValue: number;
+  durationToHold: number;
+}
+
+export interface GamePreset {
+  id: string;
+  name: string;
+  description: string;
+  sessionDuration: number;
+  fixedPhase: number;
+  objectivesSequence: ObjectivePresetStep[];
+}
+
+export interface PartidaResult {
+  status: 'VICTORY' | 'PARTIAL' | 'GAME_OVER';
+  objectivesCompletedCount: number;
+  totalObjectives: number;
+  timeRemainingBonus: number;
+  score: number;
+  timeElapsed: number;
+}
+
+export const PRESET_ESTANDAR: GamePreset = {
+  id: 'estandar',
+  name: 'Estándar',
+  description: '75s de sintonía con 3 objetivos secuenciales en Fase 2.',
+  sessionDuration: 75,
+  fixedPhase: 2,
+  objectivesSequence: [
+    {
+      id: 'obj_1',
+      title: 'Evitar Aislamiento',
+      description: 'Saca a los nodos de la soledad (salud >= 25%).',
+      type: 'EVITAR_AISLAMIENTO',
+      targetValue: 25,
+      durationToHold: 12
+    },
+    {
+      id: 'obj_2',
+      title: 'Mantener Sincronía',
+      description: 'Mantén la calidad de la red superior a 65%.',
+      type: 'MANTENER_SINCRONIA',
+      targetValue: 65,
+      durationToHold: 15
+    },
+    {
+      id: 'obj_3',
+      title: 'Conectar Especiales',
+      description: 'Integra los nodos especiales en la red.',
+      type: 'CONECTAR_ESPECIALES',
+      targetValue: 1,
+      durationToHold: 15
+    }
+  ]
+};
+
 export interface DynamicObjective {
   id: string;
   title: string;
