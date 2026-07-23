@@ -183,6 +183,7 @@ export default function App() {
   const currentObjectiveRef = useRef<DynamicObjective | null>(null);
   const objectiveSwitchTimerRef = useRef<number>(0); // timer until next objective starts
   const targetSpecialNodeIdRef = useRef<string | null>(null);
+  const completedObjectivesCountRef = useRef<number>(0);
 
   // Dynamic Floating Text score markers for animations
   const [floatingTexts, setFloatingTexts] = useState<Array<{ id: string; x: number; y: number; text: string; opacity: number; color: string }>>([]);
@@ -265,7 +266,7 @@ export default function App() {
           specialNode = nodes.find(n => !n.isGhost && n.id === targetSpecialId);
         }
         if (!specialNode) {
-          specialNode = nodes.find(n => !n.isGhost && (n.specialType === 'explorador' || n.specialType === 'organizador' || n.specialType === 'influencer'));
+          specialNode = nodes.find(n => !n.isGhost && (n.specialType === 'explorador' || n.specialType === 'organizador'));
         }
         if (!specialNode) return false;
 
@@ -431,6 +432,7 @@ export default function App() {
     graceTimerRef.current = 15.0;
     
     targetSpecialNodeIdRef.current = null;
+    completedObjectivesCountRef.current = 0;
 
     if (mode === 'partida') {
       currentPhaseRef.current = preset.fixedPhase; // Fixed Phase 2 for Estándar
@@ -818,7 +820,7 @@ export default function App() {
           setPartidaTimeLeft(partidaTimeLeftRef.current);
 
           if (partidaTimeLeftRef.current <= 0 && !isGameOver) {
-            const completedCount = partidaObjectiveIndexRef.current;
+            const completedCount = completedObjectivesCountRef.current;
             const totalObjs = selectedPresetRef.current.objectivesSequence.length;
             const isWin = completedCount >= totalObjs;
 
@@ -872,9 +874,9 @@ export default function App() {
 
           if (gameModeRef.current === 'partida') {
             // In Partida mode, Phase is fixed to Phase 2 (or preset phase)
-            // Ensure Objective 3 (CONECTAR_ESPECIALES) has special nodes present
+            // Phase 2 ONLY allows explorador and organizador. Influencers & Disruptors are strictly prohibited!
             if (currentObjectiveRef.current?.type === 'CONECTAR_ESPECIALES' && activeSpecialCount === 0) {
-              forcedType = 'influencer';
+              forcedType = Math.random() < 0.5 ? 'explorador' : 'organizador';
             } else if (activeSpecialCount < 1 && Math.random() < 0.25) {
               forcedType = Math.random() < 0.5 ? 'explorador' : 'organizador';
             } else {
@@ -978,7 +980,7 @@ export default function App() {
                 if (gameModeRef.current === 'partida') {
                   setPartidaResult({
                     status: 'GAME_OVER',
-                    objectivesCompletedCount: partidaObjectiveIndexRef.current,
+                    objectivesCompletedCount: completedObjectivesCountRef.current,
                     totalObjectives: selectedPresetRef.current.objectivesSequence.length,
                     timeRemainingBonus: 0,
                     score: Math.round(scoreRef.current),
@@ -1236,107 +1238,64 @@ export default function App() {
         // Dynamic Objectives evaluation
         if (gameModeRef.current === 'partida') {
           const timeElapsed = selectedPresetRef.current.sessionDuration - partidaTimeLeftRef.current;
-          const currentIdx = partidaObjectiveIndexRef.current;
           const sequence = selectedPresetRef.current.objectivesSequence;
 
-          // Check window advancement
-          if (currentIdx === 0 && sequence[0] && timeElapsed >= sequence[0].windowEnd && currentObjectiveRef.current?.status === 'ACTIVE') {
-            // Obj 1 window closed without completion -> advance to Obj 2
-            partidaObjectiveIndexRef.current = 1;
-            setPartidaObjectiveIndex(1);
+          // Determine expected window index based on absolute timeElapsed:
+          // Window 0: 0s - 20s (Objective 1: EVITAR_AISLAMIENTO)
+          // Window 1: 20s - 45s (Objective 2: MANTENER_SINCRONIA)
+          // Window 2: 45s - 70s (Objective 3: CONECTAR_ESPECIALES)
+          let targetWindowIdx = 0;
+          if (timeElapsed >= 45) {
+            targetWindowIdx = 2;
+          } else if (timeElapsed >= 20) {
+            targetWindowIdx = 1;
+          } else {
+            targetWindowIdx = 0;
+          }
 
-            const step2 = sequence[1];
-            if (step2) {
-              const obj2: DynamicObjective = {
-                id: step2.id,
-                title: step2.title,
-                description: step2.description,
-                type: step2.type,
-                targetValue: step2.targetValue,
-                currentProgress: 0,
-                durationToHold: step2.durationToHold,
-                status: 'ACTIVE',
-                windowStart: step2.windowStart,
-                windowEnd: step2.windowEnd
-              };
-              setCurrentObjective(obj2);
-              currentObjectiveRef.current = obj2;
+          // Window transition trigger (e.g. t reaches 20s or 45s)
+          if (targetWindowIdx !== partidaObjectiveIndexRef.current) {
+            // If previous objective was active and not completed before window closed -> FAILED
+            if (currentObjectiveRef.current && currentObjectiveRef.current.status === 'ACTIVE') {
+              const failedObj = { ...currentObjectiveRef.current, status: 'FAILED' as const };
+              currentObjectiveRef.current = failedObj;
+              setCurrentObjective(failedObj);
             }
-          } else if (currentIdx === 1 && sequence[1] && timeElapsed >= sequence[1].windowStart && (currentObjectiveRef.current === null || currentObjectiveRef.current.id === sequence[0]?.id)) {
-            // Obj 1 finished earlier, and now t >= 20s -> activate Obj 2
-            const step2 = sequence[1];
-            if (step2) {
-              const obj2: DynamicObjective = {
-                id: step2.id,
-                title: step2.title,
-                description: step2.description,
-                type: step2.type,
-                targetValue: step2.targetValue,
-                currentProgress: 0,
-                durationToHold: step2.durationToHold,
-                status: 'ACTIVE',
-                windowStart: step2.windowStart,
-                windowEnd: step2.windowEnd
-              };
-              setCurrentObjective(obj2);
-              currentObjectiveRef.current = obj2;
-            }
-          } else if (currentIdx === 1 && sequence[1] && timeElapsed >= sequence[1].windowEnd && currentObjectiveRef.current?.status === 'ACTIVE') {
-            // Obj 2 window closed without completion -> advance to Obj 3
-            partidaObjectiveIndexRef.current = 2;
-            setPartidaObjectiveIndex(2);
 
-            const step3 = sequence[2];
-            if (step3) {
-              let targetNode = nodesRef.current.find(n => !n.isGhost && (n.specialType === 'explorador' || n.specialType === 'organizador' || n.specialType === 'influencer'));
-              if (!targetNode) {
-                targetNode = generateIncomingNode(PHYSICS_CONFIG.WORLD_WIDTH, PHYSICS_CONFIG.WORLD_HEIGHT, 'explorador', nodesRef.current);
-                nodesRef.current.push(targetNode);
+            partidaObjectiveIndexRef.current = targetWindowIdx;
+            setPartidaObjectiveIndex(targetWindowIdx);
+
+            const nextStep = sequence[targetWindowIdx];
+            if (nextStep) {
+              let targetNodeId: string | undefined = undefined;
+
+              if (nextStep.type === 'CONECTAR_ESPECIALES') {
+                // At t=45s: select or spawn a Phase 2 special node (explorador or organizador ONLY)
+                let targetNode = nodesRef.current.find(n => !n.isGhost && (n.specialType === 'explorador' || n.specialType === 'organizador'));
+                if (!targetNode) {
+                  const forcedType = Math.random() < 0.5 ? 'explorador' : 'organizador';
+                  targetNode = generateIncomingNode(PHYSICS_CONFIG.WORLD_WIDTH, PHYSICS_CONFIG.WORLD_HEIGHT, forcedType, nodesRef.current);
+                  nodesRef.current.push(targetNode);
+                }
+                targetNodeId = targetNode.id;
+                targetSpecialNodeIdRef.current = targetNode.id;
               }
-              targetSpecialNodeIdRef.current = targetNode.id;
 
-              const obj3: DynamicObjective = {
-                id: step3.id,
-                title: step3.title,
-                description: step3.description,
-                type: step3.type,
-                targetValue: step3.targetValue,
+              const newObj: DynamicObjective = {
+                id: nextStep.id,
+                title: nextStep.title,
+                description: nextStep.description,
+                type: nextStep.type,
+                targetValue: nextStep.targetValue,
                 currentProgress: 0,
-                durationToHold: step3.durationToHold,
+                durationToHold: nextStep.durationToHold,
                 status: 'ACTIVE',
-                targetSpecialNodeId: targetNode.id,
-                windowStart: step3.windowStart,
-                windowEnd: step3.windowEnd
+                targetSpecialNodeId: targetNodeId,
+                windowStart: nextStep.windowStart,
+                windowEnd: nextStep.windowEnd
               };
-              setCurrentObjective(obj3);
-              currentObjectiveRef.current = obj3;
-            }
-          } else if (currentIdx === 2 && sequence[2] && timeElapsed >= sequence[2].windowStart && (currentObjectiveRef.current === null || currentObjectiveRef.current.id !== sequence[2].id)) {
-            // Obj 2 completed, and now t >= 45s -> activate Obj 3
-            if (currentObjectiveRef.current?.status !== 'COMPLETED') {
-              const step3 = sequence[2];
-              let targetNode = nodesRef.current.find(n => !n.isGhost && (n.specialType === 'explorador' || n.specialType === 'organizador' || n.specialType === 'influencer'));
-              if (!targetNode) {
-                targetNode = generateIncomingNode(PHYSICS_CONFIG.WORLD_WIDTH, PHYSICS_CONFIG.WORLD_HEIGHT, 'explorador', nodesRef.current);
-                nodesRef.current.push(targetNode);
-              }
-              targetSpecialNodeIdRef.current = targetNode.id;
-
-              const obj3: DynamicObjective = {
-                id: step3.id,
-                title: step3.title,
-                description: step3.description,
-                type: step3.type,
-                targetValue: step3.targetValue,
-                currentProgress: 0,
-                durationToHold: step3.durationToHold,
-                status: 'ACTIVE',
-                targetSpecialNodeId: targetNode.id,
-                windowStart: step3.windowStart,
-                windowEnd: step3.windowEnd
-              };
-              setCurrentObjective(obj3);
-              currentObjectiveRef.current = obj3;
+              currentObjectiveRef.current = newObj;
+              setCurrentObjective(newObj);
             }
           }
 
@@ -1344,13 +1303,14 @@ export default function App() {
           if (currentObjectiveRef.current && currentObjectiveRef.current.status === 'ACTIVE') {
             const obj = currentObjectiveRef.current;
 
-            // Objective 3 target special node check
+            // Safety check for Objective 3
             if (obj.type === 'CONECTAR_ESPECIALES') {
               let targetNode = nodesRef.current.find(n => !n.isGhost && n.id === targetSpecialNodeIdRef.current);
               if (!targetNode) {
-                targetNode = nodesRef.current.find(n => !n.isGhost && (n.specialType === 'explorador' || n.specialType === 'organizador' || n.specialType === 'influencer'));
+                targetNode = nodesRef.current.find(n => !n.isGhost && (n.specialType === 'explorador' || n.specialType === 'organizador'));
                 if (!targetNode) {
-                  targetNode = generateIncomingNode(PHYSICS_CONFIG.WORLD_WIDTH, PHYSICS_CONFIG.WORLD_HEIGHT, 'explorador', nodesRef.current);
+                  const forcedType = Math.random() < 0.5 ? 'explorador' : 'organizador';
+                  targetNode = generateIncomingNode(PHYSICS_CONFIG.WORLD_WIDTH, PHYSICS_CONFIG.WORLD_HEIGHT, forcedType, nodesRef.current);
                   nodesRef.current.push(targetNode);
                 }
                 targetSpecialNodeIdRef.current = targetNode.id;
@@ -1367,16 +1327,14 @@ export default function App() {
                 setCurrentObjective(updatedObj);
                 currentObjectiveRef.current = updatedObj;
 
+                completedObjectivesCountRef.current += 1;
+
                 // Award bonus +500
                 setScore(prev => {
                   const newScore = prev + 500;
                   scoreRef.current = newScore;
                   const rounded = Math.round(newScore);
-                  if (rounded > highScorePartidaRef.current) {
-                    setHighScorePartida(rounded);
-                    highScorePartidaRef.current = rounded;
-                    try { localStorage.setItem('constelaciones_partida_high_score', rounded.toString()); } catch {}
-                  }
+                  updateHighScore(rounded);
                   return newScore;
                 });
 
@@ -1386,7 +1344,7 @@ export default function App() {
                     id: Math.random().toString(36).substring(2, 9),
                     x: width / 2,
                     y: height * 0.35,
-                    text: `✨ ¡OBJETIVO ${currentIdx + 1}/3 CUMPLIDO! (+500 PTS) ✨`,
+                    text: `✨ ¡OBJETIVO ${partidaObjectiveIndexRef.current + 1}/3 CUMPLIDO! (+500 PTS) ✨`,
                     opacity: 1.0,
                     color: "rgba(245, 158, 11, opacity)"
                   }
@@ -1396,7 +1354,7 @@ export default function App() {
                   ambientSynth.playResonanceSFX();
                 }
 
-                if (currentIdx === 2) {
+                if (partidaObjectiveIndexRef.current === 2) {
                   // ALL 3 OBJECTIVES COMPLETED - IMMEDIATE VICTORY!
                   const timeRemaining = partidaTimeLeftRef.current;
                   const timeBonus = Math.round(timeRemaining * 10);
@@ -1404,15 +1362,11 @@ export default function App() {
 
                   scoreRef.current = finalScore;
                   setScore(finalScore);
-                  if (finalScore > highScorePartidaRef.current) {
-                    setHighScorePartida(finalScore);
-                    highScorePartidaRef.current = finalScore;
-                    try { localStorage.setItem('constelaciones_partida_high_score', finalScore.toString()); } catch {}
-                  }
+                  updateHighScore(finalScore);
 
                   setPartidaResult({
                     status: 'VICTORY',
-                    objectivesCompletedCount: 3,
+                    objectivesCompletedCount: completedObjectivesCountRef.current,
                     totalObjectives: 3,
                     timeRemainingBonus: timeBonus,
                     score: finalScore,
@@ -1420,11 +1374,7 @@ export default function App() {
                   });
                   setIsGameOver(true);
                 } else {
-                  // Advance index for transition waiting
-                  partidaObjectiveIndexRef.current = currentIdx + 1;
-                  setPartidaObjectiveIndex(currentIdx + 1);
-
-                  setPartidaTransitionMessage(`✓ OBJETIVO ${currentIdx + 1}/3 COMPLETADO`);
+                  setPartidaTransitionMessage(`✓ OBJETIVO ${partidaObjectiveIndexRef.current + 1}/3 COMPLETADO`);
                   setTimeout(() => setPartidaTransitionMessage(null), 1200);
                 }
               } else {
@@ -1791,7 +1741,7 @@ export default function App() {
         // Objective Visual Signal Overlay: CONECTAR_ESPECIALES target ring & 100px boundary
         if (currentObjectiveRef.current?.type === 'CONECTAR_ESPECIALES' && currentObjectiveRef.current?.status === 'ACTIVE') {
           const targetNode = rawNodes.find(n => !n.isGhost && n.id === targetSpecialNodeIdRef.current) 
-            || rawNodes.find(n => !n.isGhost && (n.specialType === 'explorador' || n.specialType === 'organizador' || n.specialType === 'influencer'));
+            || rawNodes.find(n => !n.isGhost && (n.specialType === 'explorador' || n.specialType === 'organizador'));
           if (targetNode) {
             targetSpecialNodeIdRef.current = targetNode.id;
 
@@ -2178,35 +2128,35 @@ export default function App() {
       />
 
       {/* HUD HEADER PANEL (Score, HighScore, Audio, and Info Trigger) */}
-      <header className={`absolute top-0 inset-x-0 px-4 sm:px-6 py-4 safe-pt flex justify-between items-center pointer-events-none z-10 transition-all duration-300 ${isHolding ? 'opacity-20' : 'opacity-100'}`}>
+      <header className={`absolute top-0 inset-x-0 px-2 sm:px-6 py-2 sm:py-4 safe-pt flex justify-between items-center pointer-events-none z-10 transition-all duration-300 ${isHolding ? 'opacity-20' : 'opacity-100'}`}>
         
         {/* Score & Stats Card */}
-        <div className="bg-slate-950/75 backdrop-blur-md border border-slate-800 rounded-xl px-2.5 py-1.5 sm:px-4 sm:py-3 pointer-events-auto flex gap-2.5 sm:gap-5 items-center shadow-lg">
+        <div className="bg-slate-950/75 backdrop-blur-md border border-slate-800 rounded-xl px-2 py-1 sm:px-4 sm:py-3 pointer-events-auto flex gap-2 sm:gap-5 items-center shadow-lg">
           <div className="flex flex-col">
-            <span className="text-[10px] sm:text-xs font-mono uppercase tracking-widest text-slate-400 flex items-center gap-1">
-              <TrendingUp size={11} className="text-emerald-400" /> {isMobileMode ? 'Sincronía' : 'Sincronía Actual'}
+            <span className="text-[9px] sm:text-xs font-mono uppercase tracking-widest text-slate-400 flex items-center gap-1">
+              <TrendingUp size={10} className="text-emerald-400" /> {isMobileMode ? 'Pts' : 'Sincronía Actual'}
             </span>
-            <span className="text-xl sm:text-3xl font-bold font-display tracking-tight text-white transition-all">
+            <span className="text-lg sm:text-3xl font-bold font-display tracking-tight text-white transition-all">
               {Math.round(score)}
             </span>
           </div>
-          <div className="h-8 w-[1px] bg-slate-800" />
+          <div className="h-6 sm:h-8 w-[1px] bg-slate-800" />
           <div className="flex flex-col">
-            <span className="text-[10px] sm:text-xs font-mono uppercase tracking-widest text-slate-400 flex items-center gap-1">
-              <Award size={11} className="text-amber-400" /> {isMobileMode ? 'Récord' : 'Récord Máximo'}
+            <span className="text-[9px] sm:text-xs font-mono uppercase tracking-widest text-slate-400 flex items-center gap-1">
+              <Award size={10} className="text-amber-400" /> {isMobileMode ? 'Máx' : 'Récord Máximo'}
             </span>
-            <span className="text-lg sm:text-2xl font-semibold font-display tracking-tight text-amber-200">
+            <span className="text-base sm:text-2xl font-semibold font-display tracking-tight text-amber-200">
               {highScore}
             </span>
           </div>
           {gameMode === 'partida' && (
             <>
-              <div className="h-8 w-[1px] bg-slate-800" />
+              <div className="h-6 sm:h-8 w-[1px] bg-slate-800" />
               <div className="flex flex-col">
-                <span className="text-[10px] sm:text-xs font-mono uppercase tracking-widest text-cyan-400 flex items-center gap-1 font-bold">
-                  <Clock size={11} className="text-cyan-400 animate-pulse" /> Tiempo
+                <span className="text-[9px] sm:text-xs font-mono uppercase tracking-widest text-cyan-400 flex items-center gap-1 font-bold">
+                  <Clock size={10} className="text-cyan-400 animate-pulse" /> Tiempo
                 </span>
-                <span className={`text-lg sm:text-2xl font-bold font-mono tracking-tight ${partidaTimeLeft < 30 ? 'text-rose-400 animate-pulse' : 'text-cyan-200'}`}>
+                <span className={`text-base sm:text-2xl font-bold font-mono tracking-tight ${partidaTimeLeft < 30 ? 'text-rose-400 animate-pulse' : 'text-cyan-200'}`}>
                   {Math.floor(partidaTimeLeft / 60)}:{(Math.floor(partidaTimeLeft) % 60).toString().padStart(2, '0')}
                 </span>
               </div>
@@ -2305,214 +2255,110 @@ export default function App() {
         )}
 
         {/* Global Sound and Info Action utilities */}
-        <div className="flex gap-1.5 sm:gap-2 pointer-events-auto">
+        <div className="flex gap-1 sm:gap-2 pointer-events-auto">
           {/* Performance / Mobile toggle button */}
           <button
             id="performance-toggle-btn"
             onClick={toggleMobileMode}
-            className={`p-3 sm:p-3 rounded-xl border backdrop-blur-md transition-all flex items-center justify-center cursor-pointer ${
+            className={`p-2 sm:p-3 rounded-xl border backdrop-blur-md transition-all flex items-center justify-center cursor-pointer ${
               isMobileMode 
                 ? 'bg-amber-950/60 border-amber-500/40 text-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.2)]' 
                 : 'bg-slate-950/65 border-slate-800 text-slate-400 hover:text-white hover:border-slate-600'
             }`}
             title={isMobileMode ? "Cambiar a modo Alto Rendimiento (120 partículas)" : "Cambiar a modo Optimizado Celular (55 partículas)"}
           >
-            {isMobileMode ? <Smartphone size={18} className="sm:w-[18px] sm:h-[18px]" /> : <Cpu size={18} className="sm:w-[18px] sm:h-[18px]" />}
+            {isMobileMode ? <Smartphone size={16} className="sm:w-[18px] sm:h-[18px]" /> : <Cpu size={16} className="sm:w-[18px] sm:h-[18px]" />}
           </button>
 
           {/* Audio toggle button */}
           <button
             id="audio-toggle-btn"
             onClick={toggleAudio}
-            className={`p-3 sm:p-3 rounded-xl border backdrop-blur-md transition-all flex items-center justify-center cursor-pointer ${
+            className={`p-2 sm:p-3 rounded-xl border backdrop-blur-md transition-all flex items-center justify-center cursor-pointer ${
               audioActive 
                 ? 'bg-sky-950/60 border-sky-500/40 text-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.2)]' 
                 : 'bg-slate-950/65 border-slate-800 text-slate-400 hover:text-white hover:border-slate-600'
             }`}
             title={audioActive ? "Silenciar audio" : "Activar audio atmosférico"}
           >
-            {audioActive ? <Volume2 size={18} className="sm:w-[18px] sm:h-[18px]" /> : <VolumeX size={18} className="sm:w-[18px] sm:h-[18px]" />}
+            {audioActive ? <Volume2 size={16} className="sm:w-[18px] sm:h-[18px]" /> : <VolumeX size={16} className="sm:w-[18px] sm:h-[18px]" />}
           </button>
 
           {/* Info/Tutorial button */}
           <button
             id="tutorial-toggle-btn"
             onClick={() => setShowTutorial(true)}
-            className="p-3 sm:p-3 rounded-xl border bg-slate-950/65 border-slate-800 text-slate-400 hover:text-white hover:border-slate-600 backdrop-blur-md transition-all cursor-pointer"
+            className="p-2 sm:p-3 rounded-xl border bg-slate-950/65 border-slate-800 text-slate-400 hover:text-white hover:border-slate-600 backdrop-blur-md transition-all cursor-pointer"
             title="Cómo Jugar"
           >
-            <HelpCircle size={18} className="sm:w-[18px] sm:h-[18px]" />
+            <HelpCircle size={16} className="sm:w-[18px] sm:h-[18px]" />
           </button>
         </div>
       </header>
 
-      {/* CENTRALIZED DYNAMIC EQUILIBRIO ZONE HUD PANEL */}
-      <div className={`absolute top-[calc(5.5rem+env(safe-area-inset-top,0px))] sm:top-28 inset-x-0 flex flex-col items-center pointer-events-none z-10 px-4 transition-all duration-300 ${isHolding ? 'opacity-20 scale-95' : 'opacity-100 scale-100'}`}>
+      {/* CENTRALIZED DYNAMIC EQUILIBRIO ZONE HUD PANEL (Ultra-compact floating bar on Mobile) */}
+      <div className={`absolute top-[calc(3.5rem+env(safe-area-inset-top,0px))] sm:top-28 inset-x-0 flex flex-col items-center pointer-events-none z-10 px-2 sm:px-4 transition-all duration-300 ${isHolding ? 'opacity-20 scale-95' : 'opacity-100 scale-100'}`}>
         
-        {/* Ecosystem Phase Capsule */}
+        {/* Mobile Compact Zone Bar (Replaces huge vertical card on mobile) */}
         {isMobileMode && (
-          <div className={`mb-3 flex flex-col items-center max-w-xs sm:max-w-sm w-full px-3 py-1.5 rounded-xl border backdrop-blur-md transition-all duration-500 bg-slate-950/60 pointer-events-auto cursor-help group relative ${getEcosystemPhase(score).bgColor}`}>
-            <div className="flex items-center justify-between w-full gap-2 text-[10px] sm:text-xs">
-              <span className="font-mono text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                🧬 ECOSISTEMA
-              </span>
-              <span className={`font-semibold tracking-wide font-display ${getEcosystemPhase(score).color}`}>
-                {getEcosystemPhase(score).name}
+          <div className={`w-full max-w-xs sm:max-w-md bg-slate-950/85 backdrop-blur-md border rounded-xl px-2.5 py-1 flex items-center justify-between gap-2 shadow-lg pointer-events-auto text-[10px] ${zoneDetails.bgColor}`}>
+            {/* Left: Zone Title */}
+            <div className="flex items-center gap-1 shrink-0">
+              <span className={`w-1.5 h-1.5 rounded-full bg-current ${activeZone === SystemZone.EQUILIBRIO ? 'animate-ping' : ''} ${zoneDetails.textColor}`} />
+              <span className={`font-display font-semibold ${zoneDetails.textColor}`}>
+                {zoneDetails.title}
               </span>
             </div>
-            {/* Progress bar to next phase */}
-            {getEcosystemPhase(score).nextThreshold !== Infinity && (
-              <div className="w-full bg-slate-800 h-1 sm:h-1.5 rounded-full mt-1.5 overflow-hidden">
-                <div 
-                  className={`h-full rounded-full transition-all duration-500 ${
-                    score >= 1800 ? 'bg-amber-500' : score >= 900 ? 'bg-purple-500' : score >= 250 ? 'bg-emerald-500' : 'bg-blue-500'
-                  }`}
-                  style={{
-                    width: `${Math.min(100, (score / getEcosystemPhase(score).nextThreshold) * 100)}%`
-                  }}
-                />
+
+            {/* Center: Slim Slider Gauge */}
+            <div className="flex-1 h-1 bg-slate-900 rounded-full overflow-visible relative mx-1">
+              <div className={`absolute left-[35%] right-[35%] top-0 bottom-0 ${currentObjective?.type === 'MANTENER_SINCRONIA' ? 'bg-emerald-400/40 border-x border-emerald-400 animate-pulse' : 'bg-emerald-500/20 border-x border-emerald-500/30'}`} />
+              <div className="absolute left-0 w-[15%] top-0 bottom-0 bg-red-500/10 rounded-l-full" />
+              <div className="absolute right-0 w-[15%] top-0 bottom-0 bg-red-500/10 rounded-r-full" />
+              <div 
+                className="absolute -top-0.5 w-2 h-2 rounded-full bg-white border border-slate-950 -ml-1 shadow transition-all duration-150 flex items-center justify-center"
+                style={{ left: `${metrics.health}%` }}
+              >
+                <div className={`w-0.5 h-0.5 rounded-full ${
+                  metrics.health < 15 || metrics.health > 85 ? 'bg-red-500' : 'bg-emerald-400'
+                }`} />
               </div>
-            )}
-            {/* Elegant Tooltip describing Phase features on hover */}
-            <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 sm:w-80 bg-slate-950/95 border border-slate-800 rounded-lg p-2.5 shadow-2xl opacity-0 scale-95 pointer-events-none group-hover:opacity-100 group-hover:scale-100 transition-all duration-300 z-50 text-left">
-              <h4 className={`text-xs font-semibold font-display mb-1 ${getEcosystemPhase(score).color}`}>
-                {getEcosystemPhase(score).name}
-              </h4>
-              <p className="text-[10px] text-slate-300 font-sans leading-relaxed">
-                {getEcosystemPhase(score).description}
-              </p>
-              {getEcosystemPhase(score).nextThreshold !== Infinity && (
-                <div className="mt-2 pt-2 border-t border-slate-900 flex justify-between items-center text-[9px] font-mono text-slate-400">
-                  <span>PROGRESO</span>
-                  <span>{Math.round(score)} / {getEcosystemPhase(score).nextThreshold} PTS</span>
-                </div>
+            </div>
+
+            {/* Right: Alarm / Immune status badge */}
+            <div className="shrink-0 font-mono text-[9px]">
+              {graceTimer > 0 ? (
+                <span className="text-sky-400 font-bold animate-pulse">Inmune {graceTimer.toFixed(0)}s</span>
+              ) : metrics.health < 15 || metrics.health > 85 ? (
+                <span className="text-red-400 font-bold animate-pulse">Colapso {criticalSecondsLeft.toFixed(1)}s</span>
+              ) : (
+                <span className="text-slate-400">{metrics.health.toFixed(0)}%</span>
               )}
             </div>
           </div>
         )}
 
-        {/* Main Zone Banner Gauge */}
-        {isMobileMode && (
-          <div className={`transition-all duration-300 w-full max-w-xs sm:max-w-md bg-slate-950/60 backdrop-blur-md border rounded-2xl p-2 sm:p-4 flex flex-col shadow-2xl items-center text-center pointer-events-none ${zoneDetails.bgColor} ${zoneDetails.glow}`}>
-            
-            <div className="flex items-center gap-1.5 mb-0.5 sm:mb-1">
-              <span className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-current ${activeZone === SystemZone.EQUILIBRIO ? 'animate-ping' : ''} ${zoneDetails.textColor}`} />
-              <h2 className={`font-display font-semibold tracking-wide text-xs sm:text-sm ${zoneDetails.textColor}`}>
-                {zoneDetails.title}
-              </h2>
-            </div>
-            
-            {!isMobileMode && (
-              <p className="text-xs text-slate-300 px-2 leading-relaxed mb-1">
-                {zoneDetails.desc}
-              </p>
-            )}
-    
-            {/* Core Equilibrium Slider / Gauge */}
-            <div className="w-full mt-1.5 sm:mt-3 relative flex flex-col">
-              
-              {/* Visual Health slider line */}
-              <div className="h-1 sm:h-1.5 w-full bg-slate-900 rounded-full overflow-visible relative">
-                {/* Healthy Zone boundaries background */}
-                <div className="absolute left-[35%] right-[35%] top-0 bottom-0 bg-emerald-500/20 border-x border-emerald-500/30" />
-                
-                {/* Danger Left Aislamiento Zone */}
-                <div className="absolute left-0 w-[15%] top-0 bottom-0 bg-red-500/10 rounded-l-full" />
-                
-                {/* Danger Right Saturación Zone */}
-                <div className="absolute right-0 w-[15%] top-0 bottom-0 bg-red-500/10 rounded-r-full" />
-    
-                {/* Current Health slider thumb dot */}
-                <div 
-                  className="absolute -top-1 sm:-top-1.5 w-3 h-3 sm:w-4 sm:h-4 rounded-full bg-white border-2 border-slate-950 -ml-1.5 sm:-ml-2 shadow-md transition-all duration-150 flex items-center justify-center"
-                  style={{ left: `${metrics.health}%` }}
-                >
-                  <div className={`w-1 sm:w-1.5 h-1 sm:h-1.5 rounded-full ${
-                    metrics.health < 15 || metrics.health > 85 ? 'bg-red-500' : 'bg-emerald-400'
-                  }`} />
-                </div>
-              </div>
-    
-              {/* Zone Markers / Labels (Visible on both Mobile and Desktop with highly intuitive alignment highlights) */}
-              <div className="flex justify-between text-[8px] sm:text-[11px] font-mono uppercase tracking-wider mt-1.5 px-0.5">
-                <span className={`transition-all duration-300 ${
-                  metrics.health < 35 
-                    ? 'text-sky-400 font-bold drop-shadow-[0_0_8px_rgba(56,189,248,0.6)] scale-105' 
-                    : 'text-slate-500/80'
-                }`}>
-                  Aislamiento
-                </span>
-                <span className={`transition-all duration-300 ${
-                  metrics.health >= 35 && metrics.health <= 65 
-                    ? 'text-emerald-400 font-bold drop-shadow-[0_0_8px_rgba(52,211,153,0.6)] scale-105' 
-                    : 'text-slate-500/80'
-                }`}>
-                  Equilibrio
-                </span>
-                <span className={`transition-all duration-300 ${
-                  metrics.health > 65 
-                    ? 'text-rose-500 font-bold drop-shadow-[0_0_8px_rgba(244,63,94,0.6)] scale-105' 
-                    : 'text-slate-500/80'
-                }`}>
-                  Congestión
-                </span>
-              </div>
-            </div>
-            
-            {/* Critical Timer Alarm Countdowns or Grace Period Stabilization */}
-            {graceTimer > 0 ? (
-              <div className="mt-2 bg-sky-950/85 border border-sky-500/30 rounded-lg px-2.5 py-1 text-center flex items-center gap-1.5 animate-pulse pointer-events-none">
-                <Activity size={10} className="text-sky-400" />
-                <span className="text-[10px] sm:text-xs font-mono uppercase tracking-widest text-sky-200">
-                  ESTABILIZANDO RED (Inmune): <b className="text-white">{graceTimer.toFixed(1)}s</b>
-                </span>
-              </div>
-            ) : (
-              (metrics.health < 15 || metrics.health > 85) && (
-                <div className="mt-2 bg-red-950/85 border border-red-500/30 rounded-lg px-2.5 py-1 text-center flex items-center gap-1.5 animate-pulse pointer-events-none">
-                  <Activity size={10} className="text-red-500" />
-                  <span className="text-[10px] sm:text-xs font-mono uppercase tracking-widest text-red-200">
-                    COLAPSO: <b className="text-white">{criticalSecondsLeft.toFixed(1)}s</b>
-                  </span>
-                </div>
-              )
-            )}
-    
-            {/* Connection Score Gate Warning if connectivity < 20 */}
-            {activeZone === SystemZone.EQUILIBRIO && metrics.connectivity < 20 && (
-              <div className="mt-2 bg-yellow-950/45 border border-yellow-500/20 rounded-lg px-2.5 py-1 text-center flex items-center gap-1 pointer-events-none">
-                <span className="text-[10px] sm:text-xs font-mono uppercase text-yellow-300">
-                  ⚠️ Candado: Conectividad {metrics.connectivity.toFixed(0)}% / 20%
-                </span>
-              </div>
-            )}
-          </div>
-        )}
-
         {/* ACTIVE RANDOM ENVIRONMENTAL THREAT PANEL (Integrated in vertical HUD stack) */}
         {activeEvent.type !== 'NONE' && (
-          <div className="mb-2 w-full max-w-xs sm:max-w-md bg-indigo-950/85 backdrop-blur-md border border-indigo-500/40 rounded-xl px-3 py-2 flex items-center justify-between gap-2.5 shadow-xl relative overflow-hidden pointer-events-none animate-pulse">
-            <div className="flex items-center gap-2 min-w-0">
+          <div className="mt-1 w-full max-w-xs sm:max-w-md bg-indigo-950/85 backdrop-blur-md border border-indigo-500/40 rounded-xl px-2.5 py-1 flex items-center justify-between gap-2 shadow-xl relative overflow-hidden pointer-events-none animate-pulse">
+            <div className="flex items-center gap-1.5 min-w-0">
               <div className="p-1 rounded-lg bg-indigo-500/20 text-indigo-300 flex items-center justify-center shrink-0">
-                <Compass size={14} className="animate-spin" style={{ animationDuration: '6s' }} />
+                <Compass size={12} className="animate-spin" style={{ animationDuration: '6s' }} />
               </div>
               <div className="flex flex-col min-w-0 text-left">
-                <span className="text-[9px] font-mono uppercase tracking-widest text-indigo-400 font-bold">EVENTO ACTIVO</span>
-                <span className="text-xs font-bold text-indigo-100 truncate">{activeEvent.name}</span>
-                {!isMobileMode && (
-                  <p className="text-[10px] text-indigo-200/80 leading-tight truncate">{activeEvent.description}</p>
-                )}
+                <span className="text-[8px] font-mono uppercase tracking-widest text-indigo-400 font-bold">EVENTO</span>
+                <span className="text-[11px] font-bold text-indigo-100 truncate">{activeEvent.name}</span>
               </div>
             </div>
-            <span className="text-xs font-mono font-bold text-indigo-300 shrink-0">
-              Quedan {activeEvent.durationLeft.toFixed(1)}s
+            <span className="text-[10px] font-mono font-bold text-indigo-300 shrink-0">
+              {activeEvent.durationLeft.toFixed(1)}s
             </span>
           </div>
         )}
 
         {/* OBJECTIVE HUD CARD */}
         {gameMode === 'partida' && partidaTransitionMessage && (
-          <div className="mt-2 w-full max-w-xs sm:max-w-md bg-purple-950/90 backdrop-blur-md border border-amber-500/50 rounded-xl p-2.5 text-center shadow-xl animate-bounce pointer-events-auto">
+          <div className="mt-1 w-full max-w-xs sm:max-w-md bg-purple-950/90 backdrop-blur-md border border-amber-500/50 rounded-xl px-2.5 py-1 text-center shadow-xl animate-bounce pointer-events-auto">
             <span className="text-xs font-bold text-amber-300 font-display">
               {partidaTransitionMessage}
             </span>
@@ -2520,50 +2366,48 @@ export default function App() {
         )}
         
         {currentObjective && (
-          <div className="mt-2 w-full max-w-xs sm:max-w-md bg-slate-950/85 backdrop-blur-md border border-purple-900/40 rounded-xl p-2.5 sm:p-3 flex items-center justify-between gap-3 shadow-xl pointer-events-auto transition-all animate-fade-in">
-            <div className="flex flex-col flex-1 min-w-0 text-left">
-              <div className="flex items-center gap-2">
-                <span className="text-[9px] font-mono uppercase tracking-widest text-purple-400 font-bold flex items-center gap-1">
-                  <Target size={11} className="text-purple-400 animate-pulse shrink-0" /> 
+          <div className="mt-1 w-full max-w-xs sm:max-w-md bg-slate-950/85 backdrop-blur-md border border-purple-900/40 rounded-xl px-2.5 py-1.5 flex flex-col gap-0.5 shadow-xl pointer-events-auto transition-all animate-fade-in text-left">
+            <div className="flex items-center justify-between gap-1.5">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-[9px] font-mono uppercase tracking-widest text-purple-400 font-bold flex items-center gap-1 shrink-0">
+                  <Target size={10} className="text-purple-400 animate-pulse shrink-0" /> 
                   {gameMode === 'partida' 
-                    ? `OBJETIVO ${partidaObjectiveIndex + 1}/${selectedPreset.objectivesSequence.length}`
-                    : 'OBJETIVO DINÁMICO'
+                    ? `OBJ ${partidaObjectiveIndex + 1}/${selectedPreset.objectivesSequence.length}`
+                    : 'OBJ'
                   }
                 </span>
                 {gameMode === 'partida' && currentObjective.windowStart !== undefined && currentObjective.windowEnd !== undefined && (
-                  <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-purple-950 border border-purple-800 text-purple-300 font-bold">
+                  <span className="text-[8px] font-mono px-1 py-0.1 rounded bg-purple-950 border border-purple-800 text-purple-300 font-bold shrink-0">
                     [{currentObjective.windowStart}-{currentObjective.windowEnd}s]
                   </span>
                 )}
+                <span className="text-xs font-bold text-white tracking-tight truncate">
+                  {currentObjective.title}
+                </span>
               </div>
-              <span className="text-xs sm:text-sm font-bold text-white tracking-tight truncate mt-0.5">
-                {currentObjective.title}
-              </span>
-              <span className="text-[10px] sm:text-xs text-slate-300 leading-tight mt-0.5">
-                {currentObjective.description}
-              </span>
-              {/* Metric Tracker Line */}
-              <div className="mt-1 text-[9px] font-mono text-purple-300/90 font-semibold">
-                {currentObjective.type === 'EVITAR_AISLAMIENTO' && (
-                  <span>Aislamiento: <b className={metrics.isolation < 50 ? 'text-emerald-400' : 'text-amber-400'}>{metrics.isolation.toFixed(0)}%</b> / Meta: &lt; 50%</span>
-                )}
-                {currentObjective.type === 'MANTENER_SINCRONIA' && (
-                  <span>Salud: <b className={metrics.health >= 35 && metrics.health <= 65 ? 'text-emerald-400' : 'text-amber-400'}>{metrics.health.toFixed(0)}%</b> / Meta: 35% - 65%</span>
-                )}
-                {currentObjective.type === 'CONECTAR_ESPECIALES' && (
-                  <span>Nodo ★: <b className={checkObjectiveCondition('CONECTAR_ESPECIALES', metrics, nodesRef.current, targetSpecialNodeIdRef.current) ? 'text-emerald-400' : 'text-rose-400'}>
-                    {checkObjectiveCondition('CONECTAR_ESPECIALES', metrics, nodesRef.current, targetSpecialNodeIdRef.current) ? 'CONECTADO (≤ 100px)' : 'DESCONECTADO'}
-                  </b></span>
-                )}
-              </div>
-            </div>
-            
-            {/* Progress countdown bar */}
-            <div className="flex flex-col items-end shrink-0">
-              <span className="text-xs font-mono font-bold text-purple-300">
+              <span className="text-xs font-mono font-bold text-purple-300 shrink-0">
                 {currentObjective.currentProgress.toFixed(1)}s / {currentObjective.durationToHold.toFixed(0)}s
               </span>
-              <div className="w-16 sm:w-20 h-1.5 bg-slate-900 rounded-full overflow-hidden mt-1 border border-slate-800">
+            </div>
+
+            {/* Metric Tracker Line + Progress Bar */}
+            <div className="flex items-center justify-between gap-2 text-[9px] font-mono text-purple-300/90 font-semibold mt-0.5">
+              <span className="truncate">
+                {currentObjective.type === 'EVITAR_AISLAMIENTO' && (
+                  <>Aislamiento: <b className={metrics.isolation < 50 ? 'text-emerald-400' : 'text-amber-400'}>{metrics.isolation.toFixed(0)}%</b> (&lt;50%)</>
+                )}
+                {currentObjective.type === 'MANTENER_SINCRONIA' && (
+                  <>Salud: <b className={metrics.health >= 35 && metrics.health <= 65 ? 'text-emerald-400' : 'text-amber-400'}>{metrics.health.toFixed(0)}%</b> (35-65%)</>
+                )}
+                {currentObjective.type === 'CONECTAR_ESPECIALES' && (
+                  <>Nodo ★: <b className={checkObjectiveCondition('CONECTAR_ESPECIALES', metrics, nodesRef.current, targetSpecialNodeIdRef.current) ? 'text-emerald-400' : 'text-rose-400'}>
+                    {checkObjectiveCondition('CONECTAR_ESPECIALES', metrics, nodesRef.current, targetSpecialNodeIdRef.current) ? 'CONECTADO (≤100px)' : 'DESCONECTADO'}
+                  </b></>
+                )}
+              </span>
+              
+              {/* Progress Countdown Bar */}
+              <div className="w-14 sm:w-20 h-1 bg-slate-900 rounded-full overflow-hidden border border-slate-800 shrink-0">
                 <div 
                   className={`h-full bg-gradient-to-r from-purple-500 to-indigo-400 transition-all duration-100 ${
                     currentObjective.currentProgress > 0 ? 'animate-pulse bg-purple-400' : 'bg-purple-600'
@@ -2579,42 +2423,42 @@ export default function App() {
       {/* BOTTOM CONTROL ACTIONS / UTILITY FOOTER DOCK */}
       {isMobileMode ? (
         /* MOBILE HUD: Ergonomic split controls for thumb play */
-        <div className={`absolute bottom-0 inset-x-0 p-4 safe-pb pointer-events-none z-10 flex justify-between items-end transition-all duration-300 ${isHolding ? 'opacity-20 pointer-events-none' : 'opacity-100'}`}>
+        <div className={`absolute bottom-0 inset-x-0 p-2.5 sm:p-4 safe-pb pointer-events-none z-10 flex justify-between items-end transition-all duration-300 ${isHolding ? 'opacity-20 pointer-events-none' : 'opacity-100'}`}>
           
           {/* Bottom Left: Repel / Attract Pill */}
-          <div className="pointer-events-auto bg-slate-950/85 backdrop-blur-md border border-slate-800 rounded-xl p-1 flex gap-1 shadow-lg">
+          <div className="pointer-events-auto bg-slate-950/85 backdrop-blur-md border border-slate-800 rounded-xl p-0.5 flex gap-0.5 shadow-lg">
             <button
               id="mode-repel-btn-mob"
               onClick={() => setInteractionMode('repel')}
-              className={`px-2.5 py-2 rounded-lg text-xs font-medium cursor-pointer transition-all flex items-center justify-center gap-1 ${
+              className={`px-2 py-1.5 rounded-lg text-[11px] font-medium cursor-pointer transition-all flex items-center justify-center gap-1 ${
                 interactionMode === 'repel'
                   ? 'bg-red-500/15 text-red-400 border border-red-500/25 shadow-sm'
                   : 'text-slate-400'
               }`}
               title="Modo Repeler"
             >
-              <Zap size={14} />
+              <Zap size={13} />
               <span>Repeler</span>
             </button>
             <button
               id="mode-attract-btn-mob"
               onClick={() => setInteractionMode('attract')}
-              className={`px-2.5 py-2 rounded-lg text-xs font-medium cursor-pointer transition-all flex items-center justify-center gap-1 ${
+              className={`px-2 py-1.5 rounded-lg text-[11px] font-medium cursor-pointer transition-all flex items-center justify-center gap-1 ${
                 interactionMode === 'attract'
                   ? 'bg-sky-500/15 text-sky-400 border border-sky-500/25 shadow-sm'
                   : 'text-slate-400'
               }`}
               title="Modo Atraer"
             >
-              <Anchor size={14} />
+              <Anchor size={13} />
               <span>Atraer</span>
             </button>
           </div>
 
           {/* Bottom Right: Resonance circular FAB + Pulse Status */}
-          <div className="pointer-events-auto flex flex-col items-center gap-1.5">
+          <div className="pointer-events-auto flex flex-col items-center gap-1">
             {/* Pulse Cooldown Badge */}
-            <div className="bg-slate-950/85 backdrop-blur-sm border border-slate-800 rounded-lg px-2 py-0.5 text-[9px] font-mono text-slate-400 shadow-md">
+            <div className="bg-slate-950/85 backdrop-blur-sm border border-slate-800 rounded-lg px-1.5 py-0.5 text-[8px] font-mono text-slate-400 shadow-md">
               PULSO: {pulseCooldown > 0 ? `${pulseCooldown.toFixed(1)}s` : 'Listo'}
             </div>
             
@@ -2623,7 +2467,7 @@ export default function App() {
               id="resonance-active-btn-mob"
               onClick={triggerResonance}
               disabled={resonanceCooldown > 0 || resonanceDurationLeft > 0}
-              className={`w-14 h-14 rounded-full border flex flex-col items-center justify-center cursor-pointer transition-all shadow-2xl relative ${
+              className={`w-12 h-12 rounded-full border flex flex-col items-center justify-center cursor-pointer transition-all shadow-2xl relative ${
                 resonanceDurationLeft > 0
                   ? 'bg-purple-500/25 text-purple-200 border-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.4)] animate-pulse'
                   : resonanceCooldown > 0
@@ -2632,13 +2476,13 @@ export default function App() {
               }`}
               title="Resonancia: Duplica fuerzas temporalmente"
             >
-              <Radio size={18} className={resonanceDurationLeft > 0 ? 'animate-pulse' : ''} />
+              <Radio size={16} className={resonanceDurationLeft > 0 ? 'animate-pulse' : ''} />
               {resonanceDurationLeft > 0 ? (
-                <span className="text-[9px] font-mono font-bold mt-0.5 text-purple-200">
+                <span className="text-[8px] font-mono font-bold mt-0.5 text-purple-200">
                   {resonanceDurationLeft.toFixed(0)}s
                 </span>
               ) : resonanceCooldown > 0 ? (
-                <span className="text-[9px] font-mono font-bold mt-0.5 text-slate-500">
+                <span className="text-[8px] font-mono font-bold mt-0.5 text-slate-500">
                   {resonanceCooldown.toFixed(0)}s
                 </span>
               ) : (
@@ -2650,8 +2494,8 @@ export default function App() {
           </div>
 
           {/* Bottom Center text hint floating (fully transparent/non-blocking) */}
-          <div className="absolute bottom-1 px-4 inset-x-0 flex justify-center pointer-events-none pb-safe">
-            <p className="text-[9px] text-slate-500/60 font-mono uppercase tracking-widest text-center">
+          <div className="absolute bottom-0.5 px-4 inset-x-0 flex justify-center pointer-events-none pb-safe">
+            <p className="text-[8px] text-slate-500/50 font-mono uppercase tracking-widest text-center">
               Toca para Pulso · Mantén para Gravedad
             </p>
           </div>
