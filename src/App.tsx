@@ -132,7 +132,7 @@ export default function App() {
   
   // Scoring & Metrics (synchronized to React State for UI HUD)
   const [score, setScore] = useState<number>(0);
-  const [highScore, setHighScore] = useState<number>(() => {
+  const [highScoreEndless, setHighScoreEndless] = useState<number>(() => {
     try {
       const saved = localStorage.getItem('constelaciones_high_score');
       return saved ? parseInt(saved, 10) : 0;
@@ -140,6 +140,23 @@ export default function App() {
       return 0;
     }
   });
+
+  const [highScorePartida, setHighScorePartida] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('constelaciones_partida_high_score');
+      return saved ? parseInt(saved, 10) : 0;
+    } catch {
+      return 0;
+    }
+  });
+
+  const highScore = gameMode === 'partida' ? highScorePartida : highScoreEndless;
+  const highScoreEndlessRef = useRef<number>(highScoreEndless);
+  const highScorePartidaRef = useRef<number>(highScorePartida);
+  highScoreEndlessRef.current = highScoreEndless;
+  highScorePartidaRef.current = highScorePartida;
+  const highScoreRef = useRef<number>(highScore);
+  highScoreRef.current = highScore;
   
   const [metrics, setMetrics] = useState<GameMetrics>({
     crowding: 0,
@@ -165,6 +182,7 @@ export default function App() {
   const [currentObjective, setCurrentObjective] = useState<DynamicObjective | null>(null);
   const currentObjectiveRef = useRef<DynamicObjective | null>(null);
   const objectiveSwitchTimerRef = useRef<number>(0); // timer until next objective starts
+  const targetSpecialNodeIdRef = useRef<string | null>(null);
 
   // Dynamic Floating Text score markers for animations
   const [floatingTexts, setFloatingTexts] = useState<Array<{ id: string; x: number; y: number; text: string; opacity: number; color: string }>>([]);
@@ -172,9 +190,9 @@ export default function App() {
   const OBJECTIVE_TEMPLATES: Array<Omit<DynamicObjective, 'id' | 'currentProgress' | 'status'>> = [
     {
       title: "Sincronía Cohesiva",
-      description: "Mantén la calidad de la red superior a 65%.",
+      description: "Mantén la salud de la red en equilibrio (35% - 65%).",
       type: "MANTENER_SINCRONIA",
-      targetValue: 65,
+      targetValue: 35,
       durationToHold: 15
     },
     {
@@ -193,17 +211,17 @@ export default function App() {
     },
     {
       title: "Vínculos Activos",
-      description: "Saca a los nodos de la soledad y el Aislamiento (salud >= 25).",
+      description: "Mantené el aislamiento por debajo del 50%.",
       type: "EVITAR_AISLAMIENTO",
-      targetValue: 25,
-      durationToHold: 12
+      targetValue: 50,
+      durationToHold: 10
     },
     {
-      title: "Red de Influencia",
-      description: "Impide que los nodos Influencers queden aislados de la red.",
+      title: "Conexión Especial",
+      description: "Mantené el nodo ★ conectado a la red.",
       type: "CONECTAR_ESPECIALES",
       targetValue: 1,
-      durationToHold: 15
+      durationToHold: 10
     }
   ];
 
@@ -223,21 +241,51 @@ export default function App() {
     currentObjectiveRef.current = newObj;
   };
 
-  const checkObjectiveCondition = (objectiveType: string, metrics: GameMetrics, nodes: GameNode[]): boolean => {
+  const checkObjectiveCondition = (
+    objectiveType: string, 
+    metricsVal: GameMetrics, 
+    nodes: GameNode[],
+    targetSpecialId?: string | null
+  ): boolean => {
     switch (objectiveType) {
       case 'MANTENER_COMUNIDADES':
-        return metrics.clusterCount >= 3;
+        return metricsVal.clusterCount >= 3;
       case 'MANTENER_SINCRONIA':
-        return metrics.clusterQuality >= 65 && metrics.clusterCount >= 1;
+        // Spec v1.3 Obj 2: 35 <= health <= 65
+        return metricsVal.health >= 35 && metricsVal.health <= 65;
       case 'EVITAR_CONGESTION':
-        return metrics.health <= 75;
+        return metricsVal.health <= 75;
       case 'EVITAR_AISLAMIENTO':
-        return metrics.health >= 25;
+        // Spec v1.3 Obj 1: isolation < 50
+        return metricsVal.isolation < 50;
       case 'CONECTAR_ESPECIALES': {
-        const influencers = nodes.filter(n => !n.isGhost && n.specialType === 'influencer');
-        if (influencers.length === 0) return true; // trivially met if none
-        // none of them are isolated
-        return influencers.every(inf => !inf.isolatedTimer || inf.isolatedTimer < 0.5);
+        // Spec v1.3 Obj 3: target special node has at least 1 active neighbor within 100px (CONNECT_DIST)
+        let specialNode: GameNode | undefined;
+        if (targetSpecialId) {
+          specialNode = nodes.find(n => !n.isGhost && n.id === targetSpecialId);
+        }
+        if (!specialNode) {
+          specialNode = nodes.find(n => !n.isGhost && (n.specialType === 'explorador' || n.specialType === 'organizador' || n.specialType === 'influencer'));
+        }
+        if (!specialNode) return false;
+
+        // Check if specialNode has at least 1 active neighbor within CONNECT_DIST (100px)
+        let hasNeighbor = false;
+        for (let j = 0; j < nodes.length; j++) {
+          const other = nodes[j];
+          if (other.id === specialNode.id || other.isGhost) continue;
+          let dx = other.x - specialNode.x;
+          let dy = other.y - specialNode.y;
+          if (dx > PHYSICS_CONFIG.WORLD_WIDTH / 2) dx -= PHYSICS_CONFIG.WORLD_WIDTH;
+          else if (dx < -PHYSICS_CONFIG.WORLD_WIDTH / 2) dx += PHYSICS_CONFIG.WORLD_WIDTH;
+          if (dy > PHYSICS_CONFIG.WORLD_HEIGHT / 2) dy -= PHYSICS_CONFIG.WORLD_HEIGHT;
+          else if (dy < -PHYSICS_CONFIG.WORLD_HEIGHT / 2) dy += PHYSICS_CONFIG.WORLD_HEIGHT;
+          if (Math.hypot(dx, dy) < PHYSICS_CONFIG.CONNECT_DIST) {
+            hasNeighbor = true;
+            break;
+          }
+        }
+        return hasNeighbor;
       }
       default:
         return false;
@@ -267,7 +315,6 @@ export default function App() {
   const audioActiveRef = useRef<boolean>(false);
   const interactionModeRef = useRef<'attract' | 'repel'>('repel');
   const timeAccumulatorRef = useRef<number>(0);
-  const highScoreRef = useRef<number>(highScore);
 
   // Sync state values with refs for frame-rate decoupled ticks
   useEffect(() => {
@@ -316,11 +363,30 @@ export default function App() {
   // Ripple animation rings for visual feedback on Pulse/Anchor
   const ripplesRef = useRef<Array<{ x: number; y: number; r: number; maxR: number; opacity: number; color: string }>>([]);
 
-  // Read High Score on Init
+  // High Score helper for both game modes
+  const updateHighScore = (roundedScore: number) => {
+    if (gameModeRef.current === 'partida') {
+      if (roundedScore > highScorePartidaRef.current) {
+        setHighScorePartida(roundedScore);
+        highScorePartidaRef.current = roundedScore;
+        try { localStorage.setItem('constelaciones_partida_high_score', roundedScore.toString()); } catch {}
+      }
+    } else {
+      if (roundedScore > highScoreEndlessRef.current) {
+        setHighScoreEndless(roundedScore);
+        highScoreEndlessRef.current = roundedScore;
+        try { localStorage.setItem('constelaciones_high_score', roundedScore.toString()); } catch {}
+      }
+    }
+  };
+
+  // Read High Scores on Init
   useEffect(() => {
     try {
-      const saved = localStorage.getItem('constelaciones_high_score');
-      if (saved) setHighScore(parseInt(saved, 10));
+      const savedEndless = localStorage.getItem('constelaciones_high_score');
+      if (savedEndless) setHighScoreEndless(parseInt(savedEndless, 10));
+      const savedPartida = localStorage.getItem('constelaciones_partida_high_score');
+      if (savedPartida) setHighScorePartida(parseInt(savedPartida, 10));
     } catch (e) {
       console.warn('Unable to access localStorage:', e);
     }
@@ -364,6 +430,8 @@ export default function App() {
     setGraceTimer(15.0);
     graceTimerRef.current = 15.0;
     
+    targetSpecialNodeIdRef.current = null;
+
     if (mode === 'partida') {
       currentPhaseRef.current = preset.fixedPhase; // Fixed Phase 2 for Estándar
       partidaTimeLeftRef.current = preset.sessionDuration;
@@ -384,7 +452,9 @@ export default function App() {
           targetValue: firstStep.targetValue,
           currentProgress: 0,
           durationToHold: firstStep.durationToHold,
-          status: 'ACTIVE'
+          status: 'ACTIVE',
+          windowStart: firstStep.windowStart,
+          windowEnd: firstStep.windowEnd
         };
         setCurrentObjective(firstObj);
         currentObjectiveRef.current = firstObj;
@@ -890,10 +960,7 @@ export default function App() {
             
             // Sync High Score
             if (rounded > highScoreRef.current) {
-              setHighScore(rounded);
-              try {
-                localStorage.setItem('constelaciones_high_score', rounded.toString());
-              } catch {}
+              updateHighScore(rounded);
             }
             return nextScore;
           });
@@ -1028,7 +1095,7 @@ export default function App() {
               scoreRef.current = val;
               const rounded = Math.round(val);
               if (rounded > highScoreRef.current) {
-                setHighScore(rounded);
+                updateHighScore(rounded);
               }
               return val;
             });
@@ -1097,7 +1164,7 @@ export default function App() {
                 scoreRef.current = val;
                 const rounded = Math.round(val);
                 if (rounded > highScoreRef.current) {
-                  setHighScore(rounded);
+                  updateHighScore(rounded);
                 }
                 return val;
               });
@@ -1168,29 +1235,130 @@ export default function App() {
 
         // Dynamic Objectives evaluation
         if (gameModeRef.current === 'partida') {
-          if (partidaTransitionTimerRef.current > 0) {
-            partidaTransitionTimerRef.current -= dt;
-            if (partidaTransitionTimerRef.current <= 0) {
-              setPartidaTransitionMessage(null);
-              const nextStep = selectedPresetRef.current.objectivesSequence[partidaObjectiveIndexRef.current];
-              if (nextStep) {
-                const nextObj: DynamicObjective = {
-                  id: nextStep.id,
-                  title: nextStep.title,
-                  description: nextStep.description,
-                  type: nextStep.type,
-                  targetValue: nextStep.targetValue,
-                  currentProgress: 0,
-                  durationToHold: nextStep.durationToHold,
-                  status: 'ACTIVE'
-                };
-                setCurrentObjective(nextObj);
-                currentObjectiveRef.current = nextObj;
+          const timeElapsed = selectedPresetRef.current.sessionDuration - partidaTimeLeftRef.current;
+          const currentIdx = partidaObjectiveIndexRef.current;
+          const sequence = selectedPresetRef.current.objectivesSequence;
+
+          // Check window advancement
+          if (currentIdx === 0 && sequence[0] && timeElapsed >= sequence[0].windowEnd && currentObjectiveRef.current?.status === 'ACTIVE') {
+            // Obj 1 window closed without completion -> advance to Obj 2
+            partidaObjectiveIndexRef.current = 1;
+            setPartidaObjectiveIndex(1);
+
+            const step2 = sequence[1];
+            if (step2) {
+              const obj2: DynamicObjective = {
+                id: step2.id,
+                title: step2.title,
+                description: step2.description,
+                type: step2.type,
+                targetValue: step2.targetValue,
+                currentProgress: 0,
+                durationToHold: step2.durationToHold,
+                status: 'ACTIVE',
+                windowStart: step2.windowStart,
+                windowEnd: step2.windowEnd
+              };
+              setCurrentObjective(obj2);
+              currentObjectiveRef.current = obj2;
+            }
+          } else if (currentIdx === 1 && sequence[1] && timeElapsed >= sequence[1].windowStart && (currentObjectiveRef.current === null || currentObjectiveRef.current.id === sequence[0]?.id)) {
+            // Obj 1 finished earlier, and now t >= 20s -> activate Obj 2
+            const step2 = sequence[1];
+            if (step2) {
+              const obj2: DynamicObjective = {
+                id: step2.id,
+                title: step2.title,
+                description: step2.description,
+                type: step2.type,
+                targetValue: step2.targetValue,
+                currentProgress: 0,
+                durationToHold: step2.durationToHold,
+                status: 'ACTIVE',
+                windowStart: step2.windowStart,
+                windowEnd: step2.windowEnd
+              };
+              setCurrentObjective(obj2);
+              currentObjectiveRef.current = obj2;
+            }
+          } else if (currentIdx === 1 && sequence[1] && timeElapsed >= sequence[1].windowEnd && currentObjectiveRef.current?.status === 'ACTIVE') {
+            // Obj 2 window closed without completion -> advance to Obj 3
+            partidaObjectiveIndexRef.current = 2;
+            setPartidaObjectiveIndex(2);
+
+            const step3 = sequence[2];
+            if (step3) {
+              let targetNode = nodesRef.current.find(n => !n.isGhost && (n.specialType === 'explorador' || n.specialType === 'organizador' || n.specialType === 'influencer'));
+              if (!targetNode) {
+                targetNode = generateIncomingNode(PHYSICS_CONFIG.WORLD_WIDTH, PHYSICS_CONFIG.WORLD_HEIGHT, 'explorador', nodesRef.current);
+                nodesRef.current.push(targetNode);
+              }
+              targetSpecialNodeIdRef.current = targetNode.id;
+
+              const obj3: DynamicObjective = {
+                id: step3.id,
+                title: step3.title,
+                description: step3.description,
+                type: step3.type,
+                targetValue: step3.targetValue,
+                currentProgress: 0,
+                durationToHold: step3.durationToHold,
+                status: 'ACTIVE',
+                targetSpecialNodeId: targetNode.id,
+                windowStart: step3.windowStart,
+                windowEnd: step3.windowEnd
+              };
+              setCurrentObjective(obj3);
+              currentObjectiveRef.current = obj3;
+            }
+          } else if (currentIdx === 2 && sequence[2] && timeElapsed >= sequence[2].windowStart && (currentObjectiveRef.current === null || currentObjectiveRef.current.id !== sequence[2].id)) {
+            // Obj 2 completed, and now t >= 45s -> activate Obj 3
+            if (currentObjectiveRef.current?.status !== 'COMPLETED') {
+              const step3 = sequence[2];
+              let targetNode = nodesRef.current.find(n => !n.isGhost && (n.specialType === 'explorador' || n.specialType === 'organizador' || n.specialType === 'influencer'));
+              if (!targetNode) {
+                targetNode = generateIncomingNode(PHYSICS_CONFIG.WORLD_WIDTH, PHYSICS_CONFIG.WORLD_HEIGHT, 'explorador', nodesRef.current);
+                nodesRef.current.push(targetNode);
+              }
+              targetSpecialNodeIdRef.current = targetNode.id;
+
+              const obj3: DynamicObjective = {
+                id: step3.id,
+                title: step3.title,
+                description: step3.description,
+                type: step3.type,
+                targetValue: step3.targetValue,
+                currentProgress: 0,
+                durationToHold: step3.durationToHold,
+                status: 'ACTIVE',
+                targetSpecialNodeId: targetNode.id,
+                windowStart: step3.windowStart,
+                windowEnd: step3.windowEnd
+              };
+              setCurrentObjective(obj3);
+              currentObjectiveRef.current = obj3;
+            }
+          }
+
+          // Evaluate current ACTIVE objective
+          if (currentObjectiveRef.current && currentObjectiveRef.current.status === 'ACTIVE') {
+            const obj = currentObjectiveRef.current;
+
+            // Objective 3 target special node check
+            if (obj.type === 'CONECTAR_ESPECIALES') {
+              let targetNode = nodesRef.current.find(n => !n.isGhost && n.id === targetSpecialNodeIdRef.current);
+              if (!targetNode) {
+                targetNode = nodesRef.current.find(n => !n.isGhost && (n.specialType === 'explorador' || n.specialType === 'organizador' || n.specialType === 'influencer'));
+                if (!targetNode) {
+                  targetNode = generateIncomingNode(PHYSICS_CONFIG.WORLD_WIDTH, PHYSICS_CONFIG.WORLD_HEIGHT, 'explorador', nodesRef.current);
+                  nodesRef.current.push(targetNode);
+                }
+                targetSpecialNodeIdRef.current = targetNode.id;
               }
             }
-          } else if (currentObjectiveRef.current && currentObjectiveRef.current.status === 'ACTIVE') {
-            const obj = currentObjectiveRef.current;
-            const isMet = checkObjectiveCondition(obj.type, nextMetrics, nodesRef.current);
+
+            const isMet = checkObjectiveCondition(obj.type, nextMetrics, nodesRef.current, targetSpecialNodeIdRef.current);
+
             if (isMet) {
               const nextProg = obj.currentProgress + dt;
               if (nextProg >= obj.durationToHold) {
@@ -1204,60 +1372,60 @@ export default function App() {
                   const newScore = prev + 500;
                   scoreRef.current = newScore;
                   const rounded = Math.round(newScore);
-                  if (rounded > highScoreRef.current) {
-                    setHighScore(rounded);
-                    try { localStorage.setItem('constelaciones_high_score', rounded.toString()); } catch {}
+                  if (rounded > highScorePartidaRef.current) {
+                    setHighScorePartida(rounded);
+                    highScorePartidaRef.current = rounded;
+                    try { localStorage.setItem('constelaciones_partida_high_score', rounded.toString()); } catch {}
                   }
                   return newScore;
                 });
 
-                partidaObjectiveIndexRef.current += 1;
-                setPartidaObjectiveIndex(partidaObjectiveIndexRef.current);
+                setFloatingTexts(prev => [
+                  ...prev,
+                  {
+                    id: Math.random().toString(36).substring(2, 9),
+                    x: width / 2,
+                    y: height * 0.35,
+                    text: `✨ ¡OBJETIVO ${currentIdx + 1}/3 CUMPLIDO! (+500 PTS) ✨`,
+                    opacity: 1.0,
+                    color: "rgba(245, 158, 11, opacity)"
+                  }
+                ]);
 
-                const totalObjs = selectedPresetRef.current.objectivesSequence.length;
-                if (partidaObjectiveIndexRef.current >= totalObjs) {
-                  // ALL OBJECTIVES COMPLETED - VICTORY!
+                if (audioActiveRef.current) {
+                  ambientSynth.playResonanceSFX();
+                }
+
+                if (currentIdx === 2) {
+                  // ALL 3 OBJECTIVES COMPLETED - IMMEDIATE VICTORY!
                   const timeRemaining = partidaTimeLeftRef.current;
                   const timeBonus = Math.round(timeRemaining * 10);
                   const finalScore = Math.round(scoreRef.current + timeBonus);
 
                   scoreRef.current = finalScore;
                   setScore(finalScore);
-                  if (finalScore > highScoreRef.current) {
-                    setHighScore(finalScore);
-                    try { localStorage.setItem('constelaciones_high_score', finalScore.toString()); } catch {}
+                  if (finalScore > highScorePartidaRef.current) {
+                    setHighScorePartida(finalScore);
+                    highScorePartidaRef.current = finalScore;
+                    try { localStorage.setItem('constelaciones_partida_high_score', finalScore.toString()); } catch {}
                   }
 
                   setPartidaResult({
                     status: 'VICTORY',
-                    objectivesCompletedCount: totalObjs,
-                    totalObjectives: totalObjs,
+                    objectivesCompletedCount: 3,
+                    totalObjectives: 3,
                     timeRemainingBonus: timeBonus,
                     score: finalScore,
                     timeElapsed: selectedPresetRef.current.sessionDuration - timeRemaining
                   });
                   setIsGameOver(true);
                 } else {
-                  // Transition to next objective step
-                  partidaTransitionTimerRef.current = 1.5;
-                  const nextStep = selectedPresetRef.current.objectivesSequence[partidaObjectiveIndexRef.current];
-                  setPartidaTransitionMessage(`¡Objetivo ${partidaObjectiveIndexRef.current}/${totalObjs} completado! Siguiente: ${nextStep.title}`);
+                  // Advance index for transition waiting
+                  partidaObjectiveIndexRef.current = currentIdx + 1;
+                  setPartidaObjectiveIndex(currentIdx + 1);
 
-                  setFloatingTexts(prev => [
-                    ...prev,
-                    {
-                      id: Math.random().toString(36).substring(2, 9),
-                      x: width / 2,
-                      y: height * 0.35,
-                      text: `✨ ¡OBJETIVO ${partidaObjectiveIndexRef.current}/${totalObjs} CUMPLIDO! (+500 PTS) ✨`,
-                      opacity: 1.0,
-                      color: "rgba(245, 158, 11, opacity)"
-                    }
-                  ]);
-
-                  if (audioActiveRef.current) {
-                    ambientSynth.playResonanceSFX();
-                  }
+                  setPartidaTransitionMessage(`✓ OBJETIVO ${currentIdx + 1}/3 COMPLETADO`);
+                  setTimeout(() => setPartidaTransitionMessage(null), 1200);
                 }
               } else {
                 const updatedObj = { ...obj, currentProgress: nextProg };
@@ -1265,9 +1433,9 @@ export default function App() {
                 currentObjectiveRef.current = updatedObj;
               }
             } else {
-              // Decay progress slightly if condition is broken
-              if (obj.currentProgress > 0) {
-                const updatedObj = { ...obj, currentProgress: Math.max(0, obj.currentProgress - dt * 0.5) };
+              // STRICT CONTINUOUS RESET TO 0 IF CONDITION BROKEN
+              if (obj.currentProgress !== 0) {
+                const updatedObj = { ...obj, currentProgress: 0 };
                 setCurrentObjective(updatedObj);
                 currentObjectiveRef.current = updatedObj;
               }
@@ -1308,10 +1476,7 @@ export default function App() {
                     scoreRef.current = newScore;
                     const rounded = Math.round(newScore);
                     if (rounded > highScoreRef.current) {
-                      setHighScore(rounded);
-                      try {
-                        localStorage.setItem('constelaciones_high_score', rounded.toString());
-                      } catch {}
+                      updateHighScore(rounded);
                     }
                     return newScore;
                   });
@@ -1591,6 +1756,69 @@ export default function App() {
           ctx.arc(centerX, centerY, auraRadius, 0, Math.PI * 2);
           ctx.fill();
         });
+
+        // Objective Visual Signal Overlay: EVITAR_AISLAMIENTO halos
+        if (currentObjectiveRef.current?.type === 'EVITAR_AISLAMIENTO' && currentObjectiveRef.current?.status === 'ACTIVE') {
+          rawNodes.forEach(n => {
+            if (n.isGhost) return;
+            let isIsolated = true;
+            for (let j = 0; j < rawNodes.length; j++) {
+              if (rawNodes[j].id === n.id || rawNodes[j].isGhost) continue;
+              let dx = rawNodes[j].x - n.x;
+              let dy = rawNodes[j].y - n.y;
+              if (dx > PHYSICS_CONFIG.WORLD_WIDTH / 2) dx -= PHYSICS_CONFIG.WORLD_WIDTH;
+              else if (dx < -PHYSICS_CONFIG.WORLD_WIDTH / 2) dx += PHYSICS_CONFIG.WORLD_WIDTH;
+              if (dy > PHYSICS_CONFIG.WORLD_HEIGHT / 2) dy -= PHYSICS_CONFIG.WORLD_HEIGHT;
+              else if (dy < -PHYSICS_CONFIG.WORLD_HEIGHT / 2) dy += PHYSICS_CONFIG.WORLD_HEIGHT;
+              if (Math.hypot(dx, dy) < PHYSICS_CONFIG.CONNECT_DIST) {
+                isIsolated = false;
+                break;
+              }
+            }
+            if (isIsolated) {
+              const pulse = 1.0 + Math.sin(timestamp * 0.008) * 0.2;
+              ctx.strokeStyle = `rgba(245, 158, 11, ${0.4 + Math.sin(timestamp * 0.008) * 0.25})`; // Amber
+              ctx.lineWidth = 1.5;
+              ctx.setLineDash([4, 4]);
+              ctx.beginPath();
+              ctx.arc(n.x, n.y, n.r * 2.8 * pulse, 0, Math.PI * 2);
+              ctx.stroke();
+              ctx.setLineDash([]);
+            }
+          });
+        }
+
+        // Objective Visual Signal Overlay: CONECTAR_ESPECIALES target ring & 100px boundary
+        if (currentObjectiveRef.current?.type === 'CONECTAR_ESPECIALES' && currentObjectiveRef.current?.status === 'ACTIVE') {
+          const targetNode = rawNodes.find(n => !n.isGhost && n.id === targetSpecialNodeIdRef.current) 
+            || rawNodes.find(n => !n.isGhost && (n.specialType === 'explorador' || n.specialType === 'organizador' || n.specialType === 'influencer'));
+          if (targetNode) {
+            targetSpecialNodeIdRef.current = targetNode.id;
+
+            // 100px connection boundary guide ring
+            const pulse = 1.0 + Math.sin(timestamp * 0.006) * 0.04;
+            ctx.strokeStyle = `rgba(168, 85, 247, ${0.35 + Math.sin(timestamp * 0.006) * 0.15})`; // Purple
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([6, 6]);
+            ctx.beginPath();
+            ctx.arc(targetNode.x, targetNode.y, PHYSICS_CONFIG.CONNECT_DIST * pulse, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Target ring glow around node
+            ctx.strokeStyle = `rgba(236, 72, 153, 0.85)`; // Magenta/Pink
+            ctx.lineWidth = 2.0;
+            ctx.beginPath();
+            ctx.arc(targetNode.x, targetNode.y, targetNode.r * 2.5, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Floating indicator star badge
+            ctx.fillStyle = `rgba(251, 191, 36, 0.95)`;
+            ctx.font = 'bold 12px "JetBrains Mono", monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('★ ESPECIAL', targetNode.x, targetNode.y - targetNode.r * 3.2);
+          }
+        }
 
         // Draw individual nodes
         rawNodes.forEach(n => {
@@ -1989,30 +2217,39 @@ export default function App() {
         {/* Center: Ecosystem Phase & Compact Zone Banner Gauge (Desktop Only) */}
         {!isMobileMode && (
           <div className="hidden md:flex items-center gap-4 pointer-events-auto max-w-[50%] lg:max-w-[60%] shrink-0">
-            {/* Ecosystem Phase Badge (Compact) */}
-            <div className={`flex flex-col px-3 py-1.5 rounded-xl border backdrop-blur-md bg-slate-950/60 cursor-help group relative shrink-0 ${getEcosystemPhase(score).bgColor}`}>
-              <div className="flex flex-col text-left">
-                <span className="font-mono text-[8px] text-slate-400 uppercase tracking-widest">🧬 Ecosistema</span>
-                <span className={`font-bold tracking-wide font-display text-xs ${getEcosystemPhase(score).color}`}>
-                  {getEcosystemPhase(score).name}
+            {/* Ecosystem Phase Badge (Compact) / Partida Mode Badge */}
+            {gameMode === 'partida' ? (
+              <div className="flex flex-col px-3 py-1.5 rounded-xl border backdrop-blur-md bg-purple-950/60 border-purple-500/40 shrink-0">
+                <span className="font-mono text-[8px] text-purple-300 uppercase tracking-widest">🏆 MODO PARTIDA</span>
+                <span className="font-bold tracking-wide font-display text-xs text-purple-200">
+                  {selectedPreset.name}
                 </span>
               </div>
-              {/* Elegant Tooltip describing Phase features on hover */}
-              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 bg-slate-950/95 border border-slate-800 rounded-lg p-2.5 shadow-2xl opacity-0 scale-95 pointer-events-none group-hover:opacity-100 group-hover:scale-100 transition-all duration-300 z-50 text-left">
-                <h4 className={`text-xs font-semibold font-display mb-1 ${getEcosystemPhase(score).color}`}>
-                  {getEcosystemPhase(score).name}
-                </h4>
-                <p className="text-[10px] text-slate-300 font-sans leading-relaxed">
-                  {getEcosystemPhase(score).description}
-                </p>
-                {getEcosystemPhase(score).nextThreshold !== Infinity && (
-                  <div className="mt-2 pt-2 border-t border-slate-900 flex justify-between items-center text-[9px] font-mono text-slate-400">
-                    <span>PROGRESO</span>
-                    <span>{Math.round(score)} / {getEcosystemPhase(score).nextThreshold} PTS</span>
-                  </div>
-                )}
+            ) : (
+              <div className={`flex flex-col px-3 py-1.5 rounded-xl border backdrop-blur-md bg-slate-950/60 cursor-help group relative shrink-0 ${getEcosystemPhase(score).bgColor}`}>
+                <div className="flex flex-col text-left">
+                  <span className="font-mono text-[8px] text-slate-400 uppercase tracking-widest">🧬 Ecosistema</span>
+                  <span className={`font-bold tracking-wide font-display text-xs ${getEcosystemPhase(score).color}`}>
+                    {getEcosystemPhase(score).name}
+                  </span>
+                </div>
+                {/* Elegant Tooltip describing Phase features on hover */}
+                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 bg-slate-950/95 border border-slate-800 rounded-lg p-2.5 shadow-2xl opacity-0 scale-95 pointer-events-none group-hover:opacity-100 group-hover:scale-100 transition-all duration-300 z-50 text-left">
+                  <h4 className={`text-xs font-semibold font-display mb-1 ${getEcosystemPhase(score).color}`}>
+                    {getEcosystemPhase(score).name}
+                  </h4>
+                  <p className="text-[10px] text-slate-300 font-sans leading-relaxed">
+                    {getEcosystemPhase(score).description}
+                  </p>
+                  {getEcosystemPhase(score).nextThreshold !== Infinity && (
+                    <div className="mt-2 pt-2 border-t border-slate-900 flex justify-between items-center text-[9px] font-mono text-slate-400">
+                      <span>PROGRESO</span>
+                      <span>{Math.round(score)} / {getEcosystemPhase(score).nextThreshold} PTS</span>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Compact Zone Banner Gauge */}
             <div className={`flex items-center gap-4 bg-slate-950/60 backdrop-blur-md border rounded-xl px-4 py-2.5 shadow-xl pointer-events-auto w-[320px] lg:w-[380px] shrink-0 transition-all ${zoneDetails.bgColor} ${zoneDetails.glow}`}>
@@ -2041,7 +2278,7 @@ export default function App() {
               <div className="flex-1 relative flex flex-col justify-center">
                 {/* Slider bar */}
                 <div className="h-1 w-full bg-slate-900 rounded-full overflow-visible relative">
-                  <div className="absolute left-[35%] right-[35%] top-0 bottom-0 bg-emerald-500/20 border-x border-emerald-500/30" />
+                  <div className={`absolute left-[35%] right-[35%] top-0 bottom-0 ${currentObjective?.type === 'MANTENER_SINCRONIA' ? 'bg-emerald-400/40 border-x border-emerald-400 animate-pulse' : 'bg-emerald-500/20 border-x border-emerald-500/30'}`} />
                   <div className="absolute left-0 w-[15%] top-0 bottom-0 bg-red-500/10 rounded-l-full" />
                   <div className="absolute right-0 w-[15%] top-0 bottom-0 bg-red-500/10 rounded-r-full" />
                   
@@ -2285,19 +2522,40 @@ export default function App() {
         {currentObjective && (
           <div className="mt-2 w-full max-w-xs sm:max-w-md bg-slate-950/85 backdrop-blur-md border border-purple-900/40 rounded-xl p-2.5 sm:p-3 flex items-center justify-between gap-3 shadow-xl pointer-events-auto transition-all animate-fade-in">
             <div className="flex flex-col flex-1 min-w-0 text-left">
-              <span className="text-[9px] font-mono uppercase tracking-widest text-purple-400 font-bold flex items-center gap-1">
-                <Target size={11} className="text-purple-400 animate-pulse shrink-0" /> 
-                {gameMode === 'partida' 
-                  ? `OBJETIVO ${partidaObjectiveIndex + 1}/${selectedPreset.objectivesSequence.length}`
-                  : 'OBJETIVO DINÁMICO'
-                }
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] font-mono uppercase tracking-widest text-purple-400 font-bold flex items-center gap-1">
+                  <Target size={11} className="text-purple-400 animate-pulse shrink-0" /> 
+                  {gameMode === 'partida' 
+                    ? `OBJETIVO ${partidaObjectiveIndex + 1}/${selectedPreset.objectivesSequence.length}`
+                    : 'OBJETIVO DINÁMICO'
+                  }
+                </span>
+                {gameMode === 'partida' && currentObjective.windowStart !== undefined && currentObjective.windowEnd !== undefined && (
+                  <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-purple-950 border border-purple-800 text-purple-300 font-bold">
+                    [{currentObjective.windowStart}-{currentObjective.windowEnd}s]
+                  </span>
+                )}
+              </div>
               <span className="text-xs sm:text-sm font-bold text-white tracking-tight truncate mt-0.5">
                 {currentObjective.title}
               </span>
               <span className="text-[10px] sm:text-xs text-slate-300 leading-tight mt-0.5">
                 {currentObjective.description}
               </span>
+              {/* Metric Tracker Line */}
+              <div className="mt-1 text-[9px] font-mono text-purple-300/90 font-semibold">
+                {currentObjective.type === 'EVITAR_AISLAMIENTO' && (
+                  <span>Aislamiento: <b className={metrics.isolation < 50 ? 'text-emerald-400' : 'text-amber-400'}>{metrics.isolation.toFixed(0)}%</b> / Meta: &lt; 50%</span>
+                )}
+                {currentObjective.type === 'MANTENER_SINCRONIA' && (
+                  <span>Salud: <b className={metrics.health >= 35 && metrics.health <= 65 ? 'text-emerald-400' : 'text-amber-400'}>{metrics.health.toFixed(0)}%</b> / Meta: 35% - 65%</span>
+                )}
+                {currentObjective.type === 'CONECTAR_ESPECIALES' && (
+                  <span>Nodo ★: <b className={checkObjectiveCondition('CONECTAR_ESPECIALES', metrics, nodesRef.current, targetSpecialNodeIdRef.current) ? 'text-emerald-400' : 'text-rose-400'}>
+                    {checkObjectiveCondition('CONECTAR_ESPECIALES', metrics, nodesRef.current, targetSpecialNodeIdRef.current) ? 'CONECTADO (≤ 100px)' : 'DESCONECTADO'}
+                  </b></span>
+                )}
+              </div>
             </div>
             
             {/* Progress countdown bar */}

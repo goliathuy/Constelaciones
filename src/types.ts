@@ -31,6 +31,8 @@ export interface ObjectivePresetStep {
   type: 'MANTENER_COMUNIDADES' | 'MANTENER_SINCRONIA' | 'EVITAR_CONGESTION' | 'EVITAR_AISLAMIENTO' | 'CONECTAR_ESPECIALES';
   targetValue: number;
   durationToHold: number;
+  windowStart: number;
+  windowEnd: number;
 }
 
 export interface GamePreset {
@@ -60,27 +62,33 @@ export const PRESET_ESTANDAR: GamePreset = {
   objectivesSequence: [
     {
       id: 'obj_1',
-      title: 'Evitar Aislamiento',
-      description: 'Saca a los nodos de la soledad (salud >= 25%).',
+      title: 'CONECTA LA RED',
+      description: 'Evitá que la red se disperse',
       type: 'EVITAR_AISLAMIENTO',
-      targetValue: 25,
-      durationToHold: 12
+      targetValue: 50, // isolation < 50
+      durationToHold: 10, // 10s continuous
+      windowStart: 0,
+      windowEnd: 20
     },
     {
       id: 'obj_2',
-      title: 'Mantener Sincronía',
-      description: 'Mantén la calidad de la red superior a 65%.',
+      title: 'MANTENÉ EL EQUILIBRIO',
+      description: 'Evitá que la red se disperse o se sature',
       type: 'MANTENER_SINCRONIA',
-      targetValue: 65,
-      durationToHold: 15
+      targetValue: 35, // 35 <= health <= 65
+      durationToHold: 15, // 15s continuous
+      windowStart: 20,
+      windowEnd: 45
     },
     {
       id: 'obj_3',
-      title: 'Conectar Especiales',
-      description: 'Integra los nodos especiales en la red.',
+      title: 'CONECTÁ AL ESPECIAL',
+      description: 'Mantené el nodo ★ unido a la red',
       type: 'CONECTAR_ESPECIALES',
-      targetValue: 1,
-      durationToHold: 15
+      targetValue: 1, // at least 1 active connection within 100px
+      durationToHold: 10, // 10s continuous
+      windowStart: 45,
+      windowEnd: 70
     }
   ]
 };
@@ -94,6 +102,9 @@ export interface DynamicObjective {
   currentProgress: number; // seconds completed under target
   durationToHold: number;  // total seconds required to complete
   status: 'ACTIVE' | 'COMPLETED' | 'FAILED';
+  targetSpecialNodeId?: string;
+  windowStart?: number;
+  windowEnd?: number;
 }
 
 export type EventType = 'NONE' | 'EUFORIA' | 'FRAGMENTACION' | 'CORRIENTE';
