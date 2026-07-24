@@ -691,3 +691,64 @@ export function findEmptyPosition(nodes: GameNode[], width: number, height: numb
 
   return { x: bestX, y: bestY };
 }
+
+/**
+ * Calculates the size of the largest connected group of active nodes
+ * connected by active links (within CONNECT_DIST = 140px).
+ */
+export function getMaxConnectedComponentSize(nodes: GameNode[]): number {
+  const active = nodes.filter(n => !n.isGhost);
+  const nLen = active.length;
+  if (nLen === 0) return 0;
+  if (nLen === 1) return 1;
+
+  const width = PHYSICS_CONFIG.WORLD_WIDTH;
+  const height = PHYSICS_CONFIG.WORLD_HEIGHT;
+  const connectDist = PHYSICS_CONFIG.CONNECT_DIST;
+
+  const neighbors: number[][] = Array.from({ length: nLen }, () => []);
+
+  for (let i = 0; i < nLen; i++) {
+    for (let j = i + 1; j < nLen; j++) {
+      let dx = active[j].x - active[i].x;
+      let dy = active[j].y - active[i].y;
+      if (dx > width / 2) dx -= width;
+      else if (dx < -width / 2) dx += width;
+      if (dy > height / 2) dy -= height;
+      else if (dy < -height / 2) dy += height;
+
+      if (Math.hypot(dx, dy) < connectDist) {
+        neighbors[i].push(j);
+        neighbors[j].push(i);
+      }
+    }
+  }
+
+  const visited = new Set<number>();
+  let maxSize = 0;
+
+  for (let i = 0; i < nLen; i++) {
+    if (visited.has(i)) continue;
+    let compSize = 0;
+    const queue = [i];
+    visited.add(i);
+
+    while (queue.length > 0) {
+      const curr = queue.shift()!;
+      compSize++;
+      for (const neighbor of neighbors[curr]) {
+        if (!visited.has(neighbor)) {
+          visited.add(neighbor);
+          queue.push(neighbor);
+        }
+      }
+    }
+
+    if (compSize > maxSize) {
+      maxSize = compSize;
+    }
+  }
+
+  return maxSize;
+}
+

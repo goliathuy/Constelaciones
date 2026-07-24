@@ -23,7 +23,8 @@ import {
   Smartphone,
   Radio,
   Target,
-  Clock
+  Clock,
+  Lock
 } from 'lucide-react';
 import { 
   GameNode, 
@@ -45,7 +46,8 @@ import {
   generateIncomingNode, 
   updatePhysics, 
   calculateGameMetrics,
-  findEmptyPosition
+  findEmptyPosition,
+  getMaxConnectedComponentSize
 } from './lib/physics';
 import { ambientSynth } from './lib/audio';
 import { AnimatePresence } from 'motion/react';
@@ -190,6 +192,8 @@ export default function App() {
   // Interaction Settings
   const [interactionMode, setInteractionMode] = useState<'attract' | 'repel'>('repel');
   const [isHolding, setIsHolding] = useState<boolean>(false);
+  const [isFreePlay, setIsFreePlay] = useState<boolean>(false);
+  const isFreePlayRef = useRef<boolean>(false);
 
   // Dynamic Objectives State
   const [currentObjective, setCurrentObjective] = useState<DynamicObjective | null>(null);
@@ -263,8 +267,9 @@ export default function App() {
   ): boolean => {
     switch (objectiveType) {
       case 'MANTENER_COMUNIDADES': {
-        const targetVal = currentObjectiveRef.current?.targetValue || 3;
-        return metricsVal.activeLinks >= targetVal || metricsVal.clusterCount >= targetVal;
+        const targetVal = currentObjectiveRef.current?.targetValue || 2;
+        const maxCompSize = getMaxConnectedComponentSize(nodes);
+        return metricsVal.activeLinks >= targetVal || maxCompSize >= (targetVal + 1) || metricsVal.clusterCount >= 1;
       }
       case 'MANTENER_SINCRONIA':
         // Spec v1.3 Obj 2: 35 <= health <= 65
@@ -430,6 +435,8 @@ export default function App() {
     setIsGameOver(false);
     setIsPlaying(true);
     setPartidaResult(null);
+    setIsFreePlay(false);
+    isFreePlayRef.current = false;
 
     setScore(0);
     scoreRef.current = 0;
@@ -621,6 +628,24 @@ export default function App() {
 
   // Trigger Resonance action
   const triggerResonance = () => {
+    const currentLvlCfg = PARTIDA_CAMPAIGN_LEVELS[selectedLevelRef.current - 1] || PARTIDA_CAMPAIGN_LEVELS[0];
+    const allowedActions = gameModeRef.current === 'endless' ? ['pulso', 'ancla', 'resonancia'] : (currentLvlCfg.allowedActions || ['pulso', 'ancla', 'resonancia']);
+
+    if (!allowedActions.includes('resonancia')) {
+      setFloatingTexts(prev => [
+        ...prev,
+        {
+          id: Math.random().toString(36).substring(2, 9),
+          x: window.innerWidth / 2,
+          y: window.innerHeight * 0.4,
+          text: "🔒 La Resonancia se desbloquea en el Nivel 3",
+          opacity: 1.0,
+          color: "rgba(244, 63, 94, 0.9)"
+        }
+      ]);
+      return;
+    }
+
     if (resonanceCooldownRef.current > 0 || resonanceDurationLeftRef.current > 0) return;
 
     resonanceActiveRef.current = true;
@@ -678,22 +703,39 @@ export default function App() {
     }
 
     // Set position of gravity Anchor
-    anchorPosRef.current = { x, y };
-    setIsHolding(true);
+    const currentLvlCfg = PARTIDA_CAMPAIGN_LEVELS[selectedLevelRef.current - 1] || PARTIDA_CAMPAIGN_LEVELS[0];
+    const allowedActions = gameModeRef.current === 'endless' ? ['pulso', 'ancla', 'resonancia'] : (currentLvlCfg.allowedActions || ['pulso', 'ancla', 'resonancia']);
 
-    if (audioActiveRef.current) {
-      ambientSynth.setAnchorActive(true);
+    if (allowedActions.includes('ancla')) {
+      anchorPosRef.current = { x, y };
+      setIsHolding(true);
+
+      if (audioActiveRef.current) {
+        ambientSynth.setAnchorActive(true);
+      }
+
+      // Set visual Anchor ring feedback
+      ripplesRef.current.push({
+        x,
+        y,
+        r: 20,
+        maxR: 400,
+        opacity: 0.4,
+        color: 'rgba(56, 189, 248, 0.2)'
+      });
+    } else if (interactionModeRef.current === 'attract') {
+      setFloatingTexts(prev => [
+        ...prev,
+        {
+          id: Math.random().toString(36).substring(2, 9),
+          x: window.innerWidth / 2,
+          y: window.innerHeight * 0.4,
+          text: "🔒 El Ancla (Gravedad) se desbloquea en el Nivel 2",
+          opacity: 1.0,
+          color: "rgba(244, 63, 94, 0.9)"
+        }
+      ]);
     }
-
-    // Set visual Anchor ring feedback
-    ripplesRef.current.push({
-      x,
-      y,
-      r: 20,
-      maxR: 400,
-      opacity: 0.4,
-      color: 'rgba(56, 189, 248, 0.2)'
-    });
   };
 
   // Updates Gravity Anchor position
@@ -879,7 +921,7 @@ export default function App() {
 
         // Session Timer Countdown for Partida Mode
         const currentLvlCfg = PARTIDA_CAMPAIGN_LEVELS[selectedLevelRef.current - 1] || PARTIDA_CAMPAIGN_LEVELS[0];
-        if (gameModeRef.current === 'partida' && currentLvlCfg.sessionDuration > 0) {
+        if (gameModeRef.current === 'partida' && currentLvlCfg.sessionDuration > 0 && !isFreePlayRef.current) {
           partidaTimeLeftRef.current = Math.max(0, partidaTimeLeftRef.current - dt);
           setPartidaTimeLeft(partidaTimeLeftRef.current);
 
@@ -1034,7 +1076,7 @@ export default function App() {
         // "Si la red permanece en cualquiera de las dos Zonas Críticas (0-15 o 85-100), se activa el criticalTimer (10s)"
         const inCriticalZone = nextMetrics.health < 15 || nextMetrics.health > 85;
 
-        if (inCriticalZone) {
+        if (inCriticalZone && !isFreePlayRef.current) {
           if (graceTimerRef.current <= 0) {
             setCriticalSecondsLeft(prev => {
               const nextVal = Math.max(0, prev - dt);
@@ -1453,6 +1495,9 @@ export default function App() {
                     setScore(finalScore);
                     updateHighScore(finalScore);
 
+                    setIsFreePlay(true);
+                    isFreePlayRef.current = true;
+
                     setPartidaResult({
                       status: 'VICTORY',
                       objectivesCompletedCount: completedObjectivesCountRef.current,
@@ -1461,13 +1506,12 @@ export default function App() {
                       score: finalScore,
                       timeElapsed: currentLvlCfg.sessionDuration - timeRemaining
                     });
-                    setIsGameOver(true);
                   } else {
                     setPartidaTransitionMessage(`✓ OBJETIVO ${partidaObjectiveIndexRef.current + 1}/${seqObjectives.length} COMPLETADO`);
                     setTimeout(() => setPartidaTransitionMessage(null), 1200);
                   }
                 } else {
-                  // Single objective level victory (Levels 1..5)
+                  // Single objective level victory (Levels 1..12)
                   const timeRemaining = partidaTimeLeftRef.current;
                   const timeBonus = isFinite(timeRemaining) ? Math.round(timeRemaining * 10) : 0;
                   const finalScore = Math.round(scoreRef.current + timeBonus);
@@ -1475,6 +1519,9 @@ export default function App() {
                   scoreRef.current = finalScore;
                   setScore(finalScore);
                   updateHighScore(finalScore);
+
+                  setIsFreePlay(true);
+                  isFreePlayRef.current = true;
 
                   setPartidaResult({
                     status: 'VICTORY',
@@ -1484,7 +1531,6 @@ export default function App() {
                     score: finalScore,
                     timeElapsed: 0
                   });
-                  setIsGameOver(true);
                 }
               } else {
                 const updatedObj = { ...obj, currentProgress: nextProg };
@@ -2281,7 +2327,7 @@ export default function App() {
             {/* Ecosystem Phase Badge (Compact) / Partida Mode Badge */}
             {gameMode === 'partida' ? (
               <div className="flex flex-col px-3 py-1.5 rounded-xl border backdrop-blur-md bg-purple-950/60 border-purple-500/40 shrink-0">
-                <span className="font-mono text-[8px] text-purple-300 uppercase tracking-widest">🏆 NIVEL {selectedLevel} DE 6</span>
+                <span className="font-mono text-[8px] text-purple-300 uppercase tracking-widest">🏆 NIVEL {selectedLevel} DE 12</span>
                 <span className="font-bold tracking-wide font-display text-xs text-purple-200">
                   {(PARTIDA_CAMPAIGN_LEVELS[selectedLevel - 1] || PARTIDA_CAMPAIGN_LEVELS[0]).title}
                 </span>
@@ -2551,10 +2597,46 @@ export default function App() {
             </span>
           </div>
         )}
+
+        {/* FREE PLAY COMPLETION HUD CARD */}
+        {gameMode === 'partida' && isFreePlay && (
+          <div className="mt-1 w-full max-w-xs sm:max-w-md bg-emerald-950/90 backdrop-blur-md border border-emerald-500/50 rounded-xl px-3 py-2 flex items-center justify-between shadow-xl pointer-events-auto transition-all animate-fade-in text-left">
+            <div className="flex flex-col min-w-0 pr-2">
+              <span className="text-[9px] font-mono uppercase tracking-widest text-emerald-400 font-bold flex items-center gap-1">
+                <Sparkles size={11} className="text-emerald-400 animate-spin" /> ¡NIVEL {selectedLevel} COMPLETADO!
+              </span>
+              <span className="text-[11px] font-semibold text-emerald-100 truncate">
+                Modo Libre activo — Experimentá sin presión
+              </span>
+            </div>
+            {selectedLevel < PARTIDA_CAMPAIGN_LEVELS.length ? (
+              <button
+                onClick={() => handleStartGame('partida', selectedLevel + 1)}
+                className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-md transition-all flex items-center gap-1 shrink-0 cursor-pointer"
+              >
+                <span>Siguiente ({selectedLevel + 1})</span>
+                <Play size={12} className="fill-current" />
+              </button>
+            ) : (
+              <button
+                onClick={() => setIsGameOver(true)}
+                className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-md transition-all shrink-0 cursor-pointer"
+              >
+                Ver Resumen
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* BOTTOM CONTROL ACTIONS / UTILITY FOOTER DOCK */}
-      {isMobileMode ? (
+      {(() => {
+        const activeLvlCfg = PARTIDA_CAMPAIGN_LEVELS[selectedLevel - 1] || PARTIDA_CAMPAIGN_LEVELS[0];
+        const activeAllowedActions = gameMode === 'endless' ? ['pulso', 'ancla', 'resonancia'] : (activeLvlCfg.allowedActions || ['pulso', 'ancla', 'resonancia']);
+        const isAnclaUnlocked = activeAllowedActions.includes('ancla');
+        const isResonanciaUnlocked = activeAllowedActions.includes('resonancia');
+
+        return isMobileMode ? (
         /* MOBILE HUD: Ergonomic split controls for thumb play */
         <div className={`absolute bottom-0 inset-x-0 p-2.5 sm:p-4 safe-pb pointer-events-none z-10 flex justify-between items-end transition-all duration-300 ${isHolding ? 'opacity-20 pointer-events-none' : 'opacity-100'}`}>
           
@@ -2575,15 +2657,20 @@ export default function App() {
             </button>
             <button
               id="mode-attract-btn-mob"
-              onClick={() => setInteractionMode('attract')}
-              className={`px-2 py-1.5 rounded-lg text-[11px] font-medium cursor-pointer transition-all flex items-center justify-center gap-1 ${
-                interactionMode === 'attract'
-                  ? 'bg-sky-500/15 text-sky-400 border border-sky-500/25 shadow-sm'
-                  : 'text-slate-400'
+              onClick={() => {
+                if (isAnclaUnlocked) setInteractionMode('attract');
+                else triggerResonance();
+              }}
+              className={`px-2 py-1.5 rounded-lg text-[11px] font-medium transition-all flex items-center justify-center gap-1 ${
+                !isAnclaUnlocked
+                  ? 'text-slate-600 bg-slate-900/50 cursor-not-allowed'
+                  : interactionMode === 'attract'
+                    ? 'bg-sky-500/15 text-sky-400 border border-sky-500/25 shadow-sm cursor-pointer'
+                    : 'text-slate-400 cursor-pointer'
               }`}
-              title="Modo Atraer"
+              title={isAnclaUnlocked ? "Modo Atraer" : "Bloqueado en este nivel"}
             >
-              <Anchor size={13} />
+              {!isAnclaUnlocked ? <Lock size={12} className="text-slate-600" /> : <Anchor size={13} />}
               <span>Atraer</span>
             </button>
           </div>
@@ -2691,15 +2778,21 @@ export default function App() {
                 </button>
                 <button
                   id="mode-attract-btn"
-                  onClick={() => setInteractionMode('attract')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-all flex items-center justify-center gap-1.5 ${
-                    interactionMode === 'attract' 
-                      ? 'bg-sky-500/15 text-sky-400 border border-sky-500/20 shadow-sm' 
-                      : 'text-slate-400 hover:text-slate-200'
+                  onClick={() => {
+                    if (isAnclaUnlocked) setInteractionMode('attract');
+                    else triggerResonance();
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center justify-center gap-1.5 ${
+                    !isAnclaUnlocked
+                      ? 'text-slate-600 bg-slate-950/40 cursor-not-allowed'
+                      : interactionMode === 'attract' 
+                        ? 'bg-sky-500/15 text-sky-400 border border-sky-500/20 shadow-sm cursor-pointer' 
+                        : 'text-slate-400 hover:text-slate-200 cursor-pointer'
                   }`}
+                  title={isAnclaUnlocked ? "Modo Atraer" : "Bloqueado en este nivel"}
                 >
-                  <Anchor size={13} />
-                  <span>Pulso: Atraer</span>
+                  {!isAnclaUnlocked ? <Lock size={13} className="text-slate-600" /> : <Anchor size={13} />}
+                  <span>Pulso: Atraer {!isAnclaUnlocked && '(Nivel 2)'}</span>
                 </button>
               </div>
 
@@ -2721,23 +2814,27 @@ export default function App() {
               <button
                 id="resonance-active-btn"
                 onClick={triggerResonance}
-                disabled={resonanceCooldown > 0 || resonanceDurationLeft > 0}
-                className={`px-4 py-1.5 rounded-xl border flex items-center gap-2 cursor-pointer transition-all justify-center shrink-0 ${
-                  resonanceDurationLeft > 0 
-                    ? 'bg-purple-500/20 text-purple-200 border-purple-500/50 shadow-[0_0_15px_rgba(168,85,247,0.3)] animate-pulse'
-                    : resonanceCooldown > 0
-                      ? 'bg-slate-900 border-slate-800 text-slate-500 cursor-not-allowed'
-                      : 'bg-purple-950/50 border-purple-800/60 text-purple-300 hover:text-white hover:border-purple-600 shadow-md'
+                disabled={!isResonanciaUnlocked || resonanceCooldown > 0 || resonanceDurationLeft > 0}
+                className={`px-4 py-1.5 rounded-xl border flex items-center gap-2 transition-all justify-center shrink-0 ${
+                  !isResonanciaUnlocked
+                    ? 'bg-slate-950 border-slate-900 text-slate-600 cursor-not-allowed'
+                    : resonanceDurationLeft > 0 
+                      ? 'bg-purple-500/20 text-purple-200 border-purple-500/50 shadow-[0_0_15px_rgba(168,85,247,0.3)] animate-pulse cursor-pointer'
+                      : resonanceCooldown > 0
+                        ? 'bg-slate-900 border-slate-800 text-slate-500 cursor-not-allowed'
+                        : 'bg-purple-950/50 border-purple-800/60 text-purple-300 hover:text-white hover:border-purple-600 shadow-md cursor-pointer'
                 }`}
-                title="Resonancia: Duplica las fuerzas temporalmente (Espacio)"
+                title={isResonanciaUnlocked ? "Resonancia: Duplica las fuerzas temporalmente (Espacio)" : "Bloqueado en este nivel"}
               >
-                <Radio size={13} className={resonanceDurationLeft > 0 ? 'animate-pulse' : ''} />
+                {!isResonanciaUnlocked ? <Lock size={13} className="text-slate-600" /> : <Radio size={13} className={resonanceDurationLeft > 0 ? 'animate-pulse' : ''} />}
                 <span className="text-xs font-semibold tracking-wide uppercase">
-                  {resonanceDurationLeft > 0 
-                    ? `RESONANDO (${resonanceDurationLeft.toFixed(1)}s)` 
-                    : resonanceCooldown > 0 
-                      ? `RESONAR (${resonanceCooldown.toFixed(1)}s)`
-                      : 'RESONAR [Espacio]'}
+                  {!isResonanciaUnlocked
+                    ? 'RESONAR (Nivel 3)'
+                    : resonanceDurationLeft > 0 
+                      ? `RESONANDO (${resonanceDurationLeft.toFixed(1)}s)` 
+                      : resonanceCooldown > 0 
+                        ? `RESONAR (${resonanceCooldown.toFixed(1)}s)`
+                        : 'RESONAR [Espacio]'}
                 </span>
               </button>
             </div>
@@ -2759,7 +2856,8 @@ export default function App() {
             </span>
           </div>
         </footer>
-      )}
+      );
+      })()}
 
       {/* START INSTRUCTIONS / TUTORIAL POPUP OVERLAY */}
       <AnimatePresence>

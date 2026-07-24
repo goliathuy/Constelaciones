@@ -136,71 +136,96 @@ export const TutorialModal: React.FC<TutorialModalProps> = ({
               </div>
             )}
 
-            {/* Campaign 6-Level Grid Picker */}
+            {/* Campaign 12-Level Grid Picker grouped by Acts */}
             <div>
               <span className="text-[10px] font-mono uppercase tracking-widest text-slate-400 font-bold block mb-2">
-                SELECCIONÁ NIVEL DE PARTIDA:
+                SELECCIONÁ NIVEL DE PARTIDA (1 - 12):
               </span>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {PARTIDA_CAMPAIGN_LEVELS.map((lvl) => {
-                  const isUnlocked = lvl.levelNumber <= unlockedLevel;
-                  const isCompleted = lvl.levelNumber < unlockedLevel;
-                  const isSelected = selectedMode === 'partida' && selectedLevel === lvl.levelNumber;
+              {/* Group levels into Acts */}
+              {[
+                { title: "ACTO I: DESCUBRIMIENTO", desc: "Sistemas simples, acciones básicas", range: [1, 4] },
+                { title: "ACTO II: COMPRENSIÓN", desc: "Nodos especiales y equilibrio", range: [5, 8] },
+                { title: "ACTO III: MAESTRÍA", desc: "Eventos, dinámicas y colapso", range: [9, 12] }
+              ].map((act, actIdx) => {
+                const actLevels = PARTIDA_CAMPAIGN_LEVELS.filter(
+                  l => l.levelNumber >= act.range[0] && l.levelNumber <= act.range[1]
+                );
 
-                  return (
-                    <button
-                      key={lvl.levelNumber}
-                      disabled={!isUnlocked}
-                      onClick={() => {
-                        onSelectMode('partida');
-                        onSelectLevel(lvl.levelNumber);
-                      }}
-                      className={`p-3 rounded-xl border text-left transition-all flex items-center justify-between gap-2.5 ${
-                        !isUnlocked
-                          ? 'bg-slate-950/40 border-slate-800/60 opacity-50 cursor-not-allowed'
-                          : isSelected
-                            ? 'bg-sky-500/20 border-sky-400 text-white ring-1 ring-sky-500/40 shadow-md cursor-pointer'
-                            : 'bg-slate-900/90 border-slate-800/90 text-slate-300 hover:border-slate-700 hover:bg-slate-800/60 cursor-pointer'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-mono font-bold text-xs shrink-0 ${
-                          isCompleted
-                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-                            : isSelected
-                              ? 'bg-sky-500 text-slate-950'
-                              : isUnlocked
-                                ? 'bg-slate-800 text-slate-300 border border-slate-700'
-                                : 'bg-slate-950 text-slate-600 border border-slate-900'
-                        }`}>
-                          {lvl.levelNumber}
-                        </div>
+                return (
+                  <div key={actIdx} className="mb-3">
+                    <div className="flex justify-between items-center mb-1.5 px-1">
+                      <span className="text-[10px] font-mono font-bold text-sky-400 uppercase tracking-wider">
+                        {act.title}
+                      </span>
+                      <span className="text-[9px] font-mono text-slate-500">
+                        {act.desc}
+                      </span>
+                    </div>
 
-                        <div className="flex flex-col min-w-0">
-                          <span className="text-xs font-bold font-display truncate text-white">
-                            {lvl.title}
-                          </span>
-                          <span className="text-[10px] font-mono text-slate-400 truncate">
-                            {lvl.conceptBadge}
-                          </span>
-                        </div>
-                      </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {actLevels.map((lvl) => {
+                        const isUnlocked = lvl.levelNumber <= unlockedLevel;
+                        const isCompleted = lvl.levelNumber < unlockedLevel;
+                        const isSelected = selectedMode === 'partida' && selectedLevel === lvl.levelNumber;
 
-                      <div className="shrink-0 font-mono text-[10px]">
-                        {!isUnlocked ? (
-                          <Lock size={14} className="text-slate-600" />
-                        ) : isCompleted ? (
-                          <CheckCircle2 size={15} className="text-emerald-400" />
-                        ) : (
-                          <ChevronRight size={15} className={isSelected ? 'text-sky-400' : 'text-slate-500'} />
-                        )}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+                        return (
+                          <button
+                            key={lvl.levelNumber}
+                            disabled={!isUnlocked}
+                            onClick={() => {
+                              onSelectMode('partida');
+                              onSelectLevel(lvl.levelNumber);
+                            }}
+                            className={`p-2.5 rounded-xl border text-left transition-all flex items-center justify-between gap-2 ${
+                              !isUnlocked
+                                ? 'bg-slate-950/40 border-slate-800/60 opacity-50 cursor-not-allowed'
+                                : isSelected
+                                  ? 'bg-sky-500/20 border-sky-400 text-white ring-1 ring-sky-500/40 shadow-md cursor-pointer'
+                                  : 'bg-slate-900/90 border-slate-800/90 text-slate-300 hover:border-slate-700 hover:bg-slate-800/60 cursor-pointer'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className={`w-6 h-6 rounded-lg flex items-center justify-center font-mono font-bold text-xs shrink-0 ${
+                                isCompleted
+                                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                                  : isSelected
+                                    ? 'bg-sky-500 text-slate-950'
+                                    : isUnlocked
+                                      ? 'bg-slate-800 text-slate-300 border border-slate-700'
+                                      : 'bg-slate-950 text-slate-600 border border-slate-900'
+                              }`}>
+                                {lvl.levelNumber}
+                              </div>
+
+                              <div className="flex flex-col min-w-0">
+                                <span className="text-xs font-bold font-display truncate text-white">
+                                  {lvl.title}
+                                </span>
+                                <span className="text-[9px] font-mono text-slate-400 truncate">
+                                  {lvl.conceptBadge}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="shrink-0 font-mono text-[10px]">
+                              {!isUnlocked ? (
+                                <Lock size={13} className="text-slate-600" />
+                              ) : isCompleted ? (
+                                <CheckCircle2 size={14} className="text-emerald-400" />
+                              ) : (
+                                <ChevronRight size={14} className={isSelected ? 'text-sky-400' : 'text-slate-500'} />
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
+
 
             {/* Endless / Free Play Option */}
             <div className="pt-2 border-t border-slate-800">

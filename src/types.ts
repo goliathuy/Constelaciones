@@ -47,137 +47,290 @@ export interface PartidaLevel {
   specialNodeType?: 'explorador' | 'organizador';
   hasEvents: boolean;
   sessionDuration: number; // Total level duration (0 = unlimited until completed)
+  allowedActions?: ('pulso' | 'ancla' | 'resonancia')[]; // Progressive action gating per level
   objective: ObjectivePresetStep;
-  sequenceObjectives?: ObjectivePresetStep[]; // For Level 6 full challenge
+  sequenceObjectives?: ObjectivePresetStep[]; // For Level 12 full challenge
 }
 
 export const PARTIDA_CAMPAIGN_LEVELS: PartidaLevel[] = [
+  // ACT I — DISCOVER (Niveles 1-4)
   {
     levelNumber: 1,
-    title: 'Conectar',
-    subtitle: 'Nivel 1 de 6',
-    description: 'Acercá los nodos para que la atracción venza la distancia y formen enlaces.',
-    conceptBadge: 'CONEXIÓN BÁSICA',
+    title: 'Conexión Inicial',
+    subtitle: 'Nivel 1 de 12 — Acto I',
+    description: 'Descubrí el Pulso: usalo para acercar los nodos y formar tus primeros enlaces.',
+    conceptBadge: 'ACTO I · EL PULSO',
     nodeCount: 6,
-    spawnRadius: 180,
+    spawnRadius: 140,
     hasSpecialNode: false,
     hasEvents: false,
-    sessionDuration: 45, // 45s time limit challenge
+    sessionDuration: 45,
+    allowedActions: ['pulso'],
     objective: {
       id: 'lvl_1_obj',
       title: 'CONECTÁ LOS NODOS',
-      description: 'Mantené al menos 3 enlaces activos durante 3s',
+      description: 'Acercá los nodos y mantené al menos 3 nodos unidos durante 3s',
       type: 'MANTENER_COMUNIDADES',
-      targetValue: 3, // At least 3 links
-      durationToHold: 3, // 3s hold
+      targetValue: 2, // 2 active links or 3 connected nodes
+      durationToHold: 3,
       windowStart: 0,
       windowEnd: 999
     }
   },
   {
     levelNumber: 2,
-    title: 'No dejes a nadie solo',
-    subtitle: 'Nivel 2 de 6',
-    description: 'Los nodos aislados debilitan la red. Atraé a los nodos periféricos.',
-    conceptBadge: 'EVITAR AISLAMIENTO',
+    title: 'Anclaje y Estabilidad',
+    subtitle: 'Nivel 2 de 12 — Acto I',
+    description: 'Aprendé a usar el Ancla para estabilizar un nodo y evitar que la red se desarme.',
+    conceptBadge: 'ACTO I · EL ANCLA',
     nodeCount: 8,
-    spawnRadius: 220,
+    spawnRadius: 180,
     hasSpecialNode: false,
     hasEvents: false,
-    sessionDuration: 50, // 50s time limit challenge
+    sessionDuration: 50,
+    allowedActions: ['pulso', 'ancla'],
     objective: {
       id: 'lvl_2_obj',
-      title: 'EVITÁ EL AISLAMIENTO',
-      description: 'Mantené el aislamiento por debajo del 50% durante 4s',
-      type: 'EVITAR_AISLAMIENTO',
-      targetValue: 50, // isolation < 50
-      durationToHold: 4, // 4s hold
+      title: 'MANTENÉ LA RED UNIDA',
+      description: 'Mantené la red conectada durante 4s usando Ancla',
+      type: 'MANTENER_COMUNIDADES',
+      targetValue: 3,
+      durationToHold: 4,
       windowStart: 0,
       windowEnd: 999
     }
   },
   {
     levelNumber: 3,
-    title: 'Encontrar el equilibrio',
-    subtitle: 'Nivel 3 de 6',
-    description: 'Ni muy dispersos, ni muy apretados. El centro de la barra verde es la zona dulce.',
-    conceptBadge: 'EQUILIBRIO Y SALUD',
+    title: 'Resonancia de Red',
+    subtitle: 'Nivel 3 de 12 — Acto I',
+    description: 'Desbloqueá la Resonancia para amplificar tus fuerzas y reorganizar la red rápidamente.',
+    conceptBadge: 'ACTO I · RESONANCIA',
     nodeCount: 10,
-    spawnRadius: 250,
+    spawnRadius: 220,
     hasSpecialNode: false,
     hasEvents: false,
-    sessionDuration: 55, // 55s time limit challenge
+    sessionDuration: 55,
+    allowedActions: ['pulso', 'ancla', 'resonancia'],
     objective: {
       id: 'lvl_3_obj',
-      title: 'EQUILIBRIO PERFECTO',
-      description: 'Mantené la salud en zona neutra (35%-65%) durante 5s',
+      title: 'ENCONTRÁ LA SALUD',
+      description: 'Mantené la salud de la red en zona verde (35%-65%) durante 5s',
       type: 'MANTENER_SINCRONIA',
-      targetValue: 35, // 35 <= health <= 65
-      durationToHold: 5, // 5s hold
+      targetValue: 35,
+      durationToHold: 5,
       windowStart: 0,
       windowEnd: 999
     }
   },
   {
     levelNumber: 4,
-    title: 'El Nodo Especial',
-    subtitle: 'Nivel 4 de 6',
-    description: 'Los nodos ★ Explorador y Organizador tienen comportamientos únicos. Conéctalos a la red.',
-    conceptBadge: 'NODOS ESPECIALES',
+    title: 'Control de Aislamiento',
+    subtitle: 'Nivel 4 de 12 — Acto I',
+    description: 'Los nodos solitarios sufren aislamiento. Atraelos antes de que debiliten el sistema.',
+    conceptBadge: 'ACTO I · AISLAMIENTO',
     nodeCount: 10,
-    spawnRadius: 280,
-    hasSpecialNode: true,
-    specialNodeType: 'explorador',
+    spawnRadius: 250,
+    hasSpecialNode: false,
     hasEvents: false,
-    sessionDuration: 60, // 60s time limit challenge
+    sessionDuration: 60,
+    allowedActions: ['pulso', 'ancla', 'resonancia'],
     objective: {
       id: 'lvl_4_obj',
-      title: 'CONECTÁ EL ESPECIAL',
-      description: 'Mantené el nodo ★ explorador conectado a la red durante 5s',
-      type: 'CONECTAR_ESPECIALES',
-      targetValue: 1, // at least 1 link
-      durationToHold: 5, // 5s hold
+      title: 'RESCATÁ LOS NODOS',
+      description: 'Mantené el aislamiento por debajo del 40% durante 4s',
+      type: 'EVITAR_AISLAMIENTO',
+      targetValue: 40,
+      durationToHold: 4,
       windowStart: 0,
       windowEnd: 999
     }
   },
+
+  // ACT II — UNDERSTAND (Niveles 5-8)
   {
     levelNumber: 5,
-    title: 'La Red Viva',
-    subtitle: 'Nivel 5 de 6',
-    description: 'La red está sujeta a eventos naturales como ráfagas y euforia. Adaptate.',
-    conceptBadge: 'EVENTOS Y TORMENTA',
-    nodeCount: 12,
-    spawnRadius: 320,
+    title: 'El Nodo Explorador★',
+    subtitle: 'Nivel 5 de 12 — Acto II',
+    description: 'Aparece un nodo ★ Explorador. Es inquieto y busca expandirse: mantenelo conectado.',
+    conceptBadge: 'ACTO II · EXPLORADOR★',
+    nodeCount: 11,
+    spawnRadius: 260,
     hasSpecialNode: true,
-    specialNodeType: 'organizador',
-    hasEvents: true,
-    sessionDuration: 65, // 65s time limit challenge
+    specialNodeType: 'explorador',
+    hasEvents: false,
+    sessionDuration: 60,
+    allowedActions: ['pulso', 'ancla', 'resonancia'],
     objective: {
       id: 'lvl_5_obj',
-      title: 'RESISTENCIA EN TORMENTA',
-      description: 'Mantené el equilibrio durante 7s mientras sopla la corriente',
-      type: 'MANTENER_SINCRONIA',
-      targetValue: 35,
-      durationToHold: 7, // 7s hold
+      title: 'CONECTÁ AL EXPLORADOR★',
+      description: 'Mantené al nodo ★ explorador conectado a la red durante 5s',
+      type: 'CONECTAR_ESPECIALES',
+      targetValue: 1,
+      durationToHold: 5,
       windowStart: 0,
       windowEnd: 999
     }
   },
   {
     levelNumber: 6,
-    title: 'El Gran Desafío',
-    subtitle: 'Nivel 6 de 6 — Desafío Final',
-    description: 'Demostrá tu dominio total: 75 segundos, 3 objetivos secuenciales bajo presión temporal.',
-    conceptBadge: 'DESAFÍO COMPLETO',
+    title: 'El Centro Organizador★',
+    subtitle: 'Nivel 6 de 12 — Acto II',
+    description: 'El nodo ★ Organizador genera cohesión local. Usalo como núcleo de la constelación.',
+    conceptBadge: 'ACTO II · ORGANIZADOR★',
+    nodeCount: 12,
+    spawnRadius: 280,
+    hasSpecialNode: true,
+    specialNodeType: 'organizador',
+    hasEvents: false,
+    sessionDuration: 60,
+    allowedActions: ['pulso', 'ancla', 'resonancia'],
+    objective: {
+      id: 'lvl_6_obj',
+      title: 'ORGANIZÁ LA COMUNIDAD★',
+      description: 'Mantené al nodo ★ organizador conectado durante 5s',
+      type: 'CONECTAR_ESPECIALES',
+      targetValue: 1,
+      durationToHold: 5,
+      windowStart: 0,
+      windowEnd: 999
+    }
+  },
+  {
+    levelNumber: 7,
+    title: 'Equilibrio Dinámico',
+    subtitle: 'Nivel 7 de 12 — Acto II',
+    description: 'Evitá tanto la dispersión como el hacinamiento. La clave está en el centro.',
+    conceptBadge: 'ACTO II · EQUILIBRIO',
+    nodeCount: 12,
+    spawnRadius: 300,
+    hasSpecialNode: false,
+    hasEvents: false,
+    sessionDuration: 65,
+    allowedActions: ['pulso', 'ancla', 'resonancia'],
+    objective: {
+      id: 'lvl_7_obj',
+      title: 'MANTENÉ EL EQUILIBRIO',
+      description: 'Mantené la salud de la red en zona verde (35%-65%) durante 6s',
+      type: 'MANTENER_SINCRONIA',
+      targetValue: 35,
+      durationToHold: 6,
+      windowStart: 0,
+      windowEnd: 999
+    }
+  },
+  {
+    levelNumber: 8,
+    title: 'Constelación Dual★',
+    subtitle: 'Nivel 8 de 12 — Acto II',
+    description: 'Goberná una red más amplia integrando nodos especiales y normales en armonía.',
+    conceptBadge: 'ACTO II · DUALIDAD',
+    nodeCount: 14,
+    spawnRadius: 320,
+    hasSpecialNode: true,
+    specialNodeType: 'explorador',
+    hasEvents: false,
+    sessionDuration: 65,
+    allowedActions: ['pulso', 'ancla', 'resonancia'],
+    objective: {
+      id: 'lvl_8_obj',
+      title: 'INTEGRÁ EL SISTEMA★',
+      description: 'Mantené al nodo ★ especial conectado durante 6s',
+      type: 'CONECTAR_ESPECIALES',
+      targetValue: 1,
+      durationToHold: 6,
+      windowStart: 0,
+      windowEnd: 999
+    }
+  },
+
+  // ACT III — MASTER (Niveles 9-12)
+  {
+    levelNumber: 9,
+    title: 'Tormenta de Eventos',
+    subtitle: 'Nivel 9 de 12 — Acto III',
+    description: 'Soplan ráfagas ambientales sobre el cosmos. Mantené la estructura en movimiento.',
+    conceptBadge: 'ACTO III · EVENTOS',
+    nodeCount: 14,
+    spawnRadius: 330,
+    hasSpecialNode: true,
+    specialNodeType: 'organizador',
+    hasEvents: true,
+    sessionDuration: 70,
+    allowedActions: ['pulso', 'ancla', 'resonancia'],
+    objective: {
+      id: 'lvl_9_obj',
+      title: 'RESISTÍ LA TORMENTA',
+      description: 'Mantené la salud en zona verde durante 6s en plena turbulencia',
+      type: 'MANTENER_SINCRONIA',
+      targetValue: 35,
+      durationToHold: 6,
+      windowStart: 0,
+      windowEnd: 999
+    }
+  },
+  {
+    levelNumber: 10,
+    title: 'Umbral de Colapso',
+    subtitle: 'Nivel 10 de 12 — Acto III',
+    description: 'La inestabilidad puede activar el temporizador de colapso. Salvá la red a tiempo.',
+    conceptBadge: 'ACTO III · AMENAZA COLAPSO',
+    nodeCount: 15,
+    spawnRadius: 340,
+    hasSpecialNode: false,
+    hasEvents: true,
+    sessionDuration: 70,
+    allowedActions: ['pulso', 'ancla', 'resonancia'],
+    objective: {
+      id: 'lvl_10_obj',
+      title: 'EVITÁ EL COLAPSO',
+      description: 'Mantené el aislamiento por debajo del 45% durante 7s',
+      type: 'EVITAR_AISLAMIENTO',
+      targetValue: 45,
+      durationToHold: 7,
+      windowStart: 0,
+      windowEnd: 999
+    }
+  },
+  {
+    levelNumber: 11,
+    title: 'Ecosistema Reactivo',
+    subtitle: 'Nivel 11 de 12 — Acto III',
+    description: 'Combinación de nodos especiales y perturbaciones externas. Usá todo lo aprendido.',
+    conceptBadge: 'ACTO III · ECOSISTEMA VIVO',
     nodeCount: 16,
+    spawnRadius: 350,
+    hasSpecialNode: true,
+    specialNodeType: 'explorador',
+    hasEvents: true,
+    sessionDuration: 70,
+    allowedActions: ['pulso', 'ancla', 'resonancia'],
+    objective: {
+      id: 'lvl_11_obj',
+      title: 'PROTEGÉ AL ESPECIAL★',
+      description: 'Mantené el nodo ★ especial unido durante 7s bajo tormenta',
+      type: 'CONECTAR_ESPECIALES',
+      targetValue: 1,
+      durationToHold: 7,
+      windowStart: 0,
+      windowEnd: 999
+    }
+  },
+  {
+    levelNumber: 12,
+    title: 'Constelación Maestra',
+    subtitle: 'Nivel 12 de 12 — Desafío Final',
+    description: 'El clímax del aprendizaje: 75 segundos, 3 objetivos secuenciales bajo máxima presión.',
+    conceptBadge: 'ACTO III · MAESTRÍA TOTAL',
+    nodeCount: 18,
     spawnRadius: 360,
     hasSpecialNode: true,
     hasEvents: true,
     sessionDuration: 75,
+    allowedActions: ['pulso', 'ancla', 'resonancia'],
     objective: {
-      id: 'lvl_6_obj_1',
-      title: 'CONECTA LA RED',
+      id: 'lvl_12_obj_1',
+      title: '1. CONECTA LA RED',
       description: 'Evitá que la red se disperse',
       type: 'EVITAR_AISLAMIENTO',
       targetValue: 50,
@@ -187,8 +340,8 @@ export const PARTIDA_CAMPAIGN_LEVELS: PartidaLevel[] = [
     },
     sequenceObjectives: [
       {
-        id: 'lvl_6_obj_1',
-        title: 'CONECTA LA RED',
+        id: 'lvl_12_obj_1',
+        title: '1. CONECTÁ LA RED',
         description: 'Evitá que la red se disperse',
         type: 'EVITAR_AISLAMIENTO',
         targetValue: 50,
@@ -197,9 +350,9 @@ export const PARTIDA_CAMPAIGN_LEVELS: PartidaLevel[] = [
         windowEnd: 20
       },
       {
-        id: 'lvl_6_obj_2',
-        title: 'MANTENÉ EL EQUILIBRIO',
-        description: 'Mantené la red en zona saludable',
+        id: 'lvl_12_obj_2',
+        title: '2. EQUILIBRIO DE SALUD',
+        description: 'Mantené la red en zona verde',
         type: 'MANTENER_SINCRONIA',
         targetValue: 35,
         durationToHold: 15,
@@ -207,8 +360,8 @@ export const PARTIDA_CAMPAIGN_LEVELS: PartidaLevel[] = [
         windowEnd: 45
       },
       {
-        id: 'lvl_6_obj_3',
-        title: 'CONECTÁ AL ESPECIAL',
+        id: 'lvl_12_obj_3',
+        title: '3. PROTEGÉ AL ESPECIAL★',
         description: 'Mantené el nodo ★ unido a la red',
         type: 'CONECTAR_ESPECIALES',
         targetValue: 1,

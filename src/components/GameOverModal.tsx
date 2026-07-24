@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { Activity, RotateCcw, Trophy, Target, Shuffle, ChevronRight, Play } from 'lucide-react';
-import { SystemZone, GameMode, PartidaResult } from '../types';
+import { SystemZone, GameMode, PartidaResult, PARTIDA_CAMPAIGN_LEVELS } from '../types';
 
 interface GameOverModalProps {
   score: number;
@@ -33,7 +33,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   const isVictory = partidaResult?.status === 'VICTORY';
   const isPartial = partidaResult?.status === 'PARTIAL';
   const isCollapse = !isVictory && !isPartial;
-  const hasNextLevel = selectedLevel < 6;
+  const hasNextLevel = selectedLevel < PARTIDA_CAMPAIGN_LEVELS.length;
 
   return (
     <motion.div
