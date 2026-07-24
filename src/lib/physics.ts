@@ -498,6 +498,7 @@ export function calculateGameMetrics(nodes: GameNode[]): { metrics: GameMetrics;
         clusterQuality: 0,
         connectivity: 0,
         clusterCount: 0,
+        activeLinks: 0,
       },
       nodeGroups: [],
     };
@@ -643,6 +644,7 @@ export function calculateGameMetrics(nodes: GameNode[]): { metrics: GameMetrics;
       clusterQuality,
       connectivity,
       clusterCount: clusters.length,
+      activeLinks: activeConnections,
     },
     // Map cluster node indices to original nodes IDs for reference
     nodeGroups: clusters.map(clusterIndices => clusterIndices.map(idx => idx)),

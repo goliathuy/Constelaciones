@@ -310,6 +310,7 @@ export interface GameMetrics {
   clusterQuality: number; // 0 - 100
   connectivity: number; // 0 - 100
   clusterCount: number;
+  activeLinks: number; // Total number of active connection edges
 }
 
 export enum SystemZone {

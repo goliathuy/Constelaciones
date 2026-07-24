@@ -60,7 +60,7 @@ const getTargetNodesCount = (
 ) => {
   if (mode === 'partida') {
     const lvlCfg = PARTIDA_CAMPAIGN_LEVELS[selectedLevel - 1] || PARTIDA_CAMPAIGN_LEVELS[0];
-    return lvlCfg.nodeCount + (lvlCfg.hasSpecialNode ? 1 : 0);
+    return lvlCfg.nodeCount;
   }
   if (currentScore < 250) {
     return isMobile ? 18 : 25; // Phase 1
@@ -176,7 +176,8 @@ export default function App() {
     health: 50,
     clusterQuality: 0,
     connectivity: 0,
-    clusterCount: 0
+    clusterCount: 0,
+    activeLinks: 0
   });
 
   // Timers & Cooldowns
@@ -261,8 +262,10 @@ export default function App() {
     targetSpecialId?: string | null
   ): boolean => {
     switch (objectiveType) {
-      case 'MANTENER_COMUNIDADES':
-        return metricsVal.clusterCount >= 3;
+      case 'MANTENER_COMUNIDADES': {
+        const targetVal = currentObjectiveRef.current?.targetValue || 3;
+        return metricsVal.activeLinks >= targetVal || metricsVal.clusterCount >= targetVal;
+      }
       case 'MANTENER_SINCRONIA':
         // Spec v1.3 Obj 2: 35 <= health <= 65
         return metricsVal.health >= 35 && metricsVal.health <= 65;
@@ -495,14 +498,14 @@ export default function App() {
     }
 
     // Create baseline nodes in LOGICAL coordinates
-    const targetCount = mode === 'partida' 
-      ? (isMobileMode ? Math.min(currentLevelConfig.nodeCount, 40) : currentLevelConfig.nodeCount)
+    const normalCount = mode === 'partida' 
+      ? Math.max(1, currentLevelConfig.nodeCount - (currentLevelConfig.hasSpecialNode ? 1 : 0))
       : getTargetNodesCount(0, isMobileMode, mode, 1);
 
     const spawnRadius = mode === 'partida' ? currentLevelConfig.spawnRadius : 400;
 
     nodesRef.current = generateInitialNodes(
-      targetCount,
+      normalCount,
       PHYSICS_CONFIG.WORLD_WIDTH,
       PHYSICS_CONFIG.WORLD_HEIGHT,
       spawnRadius
@@ -821,8 +824,12 @@ export default function App() {
         }
 
         // 1. Environmental event manager spawning
-        eventChangeTimerRef.current -= dt;
-        if (eventChangeTimerRef.current <= 0) {
+        const currentLvlConfig = PARTIDA_CAMPAIGN_LEVELS[selectedLevelRef.current - 1] || PARTIDA_CAMPAIGN_LEVELS[0];
+        const canTriggerEvents = gameModeRef.current === 'endless' || (gameModeRef.current === 'partida' && currentLvlConfig.hasEvents);
+
+        if (canTriggerEvents) {
+          eventChangeTimerRef.current -= dt;
+          if (eventChangeTimerRef.current <= 0) {
           // Trigger random new environmental threat
           const roll = Math.random();
           let nextType: EventType = 'NONE';
@@ -857,6 +864,7 @@ export default function App() {
 
           // Reset timers
           eventChangeTimerRef.current = 999999; // event will clear itself via the interval ticks
+        }
         }
 
         // 2. FIFO Node continuous spawner with Dynamic Density & Intelligent Placement
@@ -2498,6 +2506,9 @@ export default function App() {
             {/* Metric Tracker Line + Progress Bar */}
             <div className="flex items-center justify-between gap-2 text-[9px] font-mono text-purple-300/90 font-semibold mt-0.5">
               <span className="truncate">
+                {currentObjective.type === 'MANTENER_COMUNIDADES' && (
+                  <>Enlaces activos: <b className={metrics.activeLinks >= currentObjective.targetValue ? 'text-emerald-400' : 'text-amber-400'}>{metrics.activeLinks}</b> (≥{currentObjective.targetValue})</>
+                )}
                 {currentObjective.type === 'EVITAR_AISLAMIENTO' && (
                   <>Aislamiento: <b className={metrics.isolation < 50 ? 'text-emerald-400' : 'text-amber-400'}>{metrics.isolation.toFixed(0)}%</b> (&lt;50%)</>
                 )}
