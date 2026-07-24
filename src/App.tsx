@@ -1244,8 +1244,11 @@ export default function App() {
           // Window 0: 0s - 20s (Objective 1: EVITAR_AISLAMIENTO)
           // Window 1: 20s - 45s (Objective 2: MANTENER_SINCRONIA)
           // Window 2: 45s - 70s (Objective 3: CONECTAR_ESPECIALES)
+          // Window 3: 70s - 75s (Margen Final: Sin objetivo activo)
           let targetWindowIdx = 0;
-          if (timeElapsed >= 45) {
+          if (timeElapsed >= 70) {
+            targetWindowIdx = 3;
+          } else if (timeElapsed >= 45) {
             targetWindowIdx = 2;
           } else if (timeElapsed >= 20) {
             targetWindowIdx = 1;
@@ -1253,7 +1256,7 @@ export default function App() {
             targetWindowIdx = 0;
           }
 
-          // Window transition trigger (e.g. t reaches 20s or 45s)
+          // Window transition trigger (e.g. t reaches 20s, 45s, or 70s)
           if (targetWindowIdx !== partidaObjectiveIndexRef.current) {
             // If previous objective was active and not completed before window closed -> FAILED
             if (currentObjectiveRef.current && currentObjectiveRef.current.status === 'ACTIVE') {
@@ -1265,37 +1268,44 @@ export default function App() {
             partidaObjectiveIndexRef.current = targetWindowIdx;
             setPartidaObjectiveIndex(targetWindowIdx);
 
-            const nextStep = sequence[targetWindowIdx];
-            if (nextStep) {
-              let targetNodeId: string | undefined = undefined;
+            if (targetWindowIdx < sequence.length) {
+              const nextStep = sequence[targetWindowIdx];
+              if (nextStep) {
+                let targetNodeId: string | undefined = undefined;
 
-              if (nextStep.type === 'CONECTAR_ESPECIALES') {
-                // At t=45s: select or spawn a Phase 2 special node (explorador or organizador ONLY)
-                let targetNode = nodesRef.current.find(n => !n.isGhost && (n.specialType === 'explorador' || n.specialType === 'organizador'));
-                if (!targetNode) {
-                  const forcedType = Math.random() < 0.5 ? 'explorador' : 'organizador';
-                  targetNode = generateIncomingNode(PHYSICS_CONFIG.WORLD_WIDTH, PHYSICS_CONFIG.WORLD_HEIGHT, forcedType, nodesRef.current);
-                  nodesRef.current.push(targetNode);
+                if (nextStep.type === 'CONECTAR_ESPECIALES') {
+                  // At t=45s: select or spawn a Phase 2 special node (explorador or organizador ONLY)
+                  let targetNode = nodesRef.current.find(n => !n.isGhost && (n.specialType === 'explorador' || n.specialType === 'organizador'));
+                  if (!targetNode) {
+                    const forcedType = Math.random() < 0.5 ? 'explorador' : 'organizador';
+                    targetNode = generateIncomingNode(PHYSICS_CONFIG.WORLD_WIDTH, PHYSICS_CONFIG.WORLD_HEIGHT, forcedType, nodesRef.current);
+                    nodesRef.current.push(targetNode);
+                  }
+                  targetNodeId = targetNode.id;
+                  targetSpecialNodeIdRef.current = targetNode.id;
                 }
-                targetNodeId = targetNode.id;
-                targetSpecialNodeIdRef.current = targetNode.id;
-              }
 
-              const newObj: DynamicObjective = {
-                id: nextStep.id,
-                title: nextStep.title,
-                description: nextStep.description,
-                type: nextStep.type,
-                targetValue: nextStep.targetValue,
-                currentProgress: 0,
-                durationToHold: nextStep.durationToHold,
-                status: 'ACTIVE',
-                targetSpecialNodeId: targetNodeId,
-                windowStart: nextStep.windowStart,
-                windowEnd: nextStep.windowEnd
-              };
-              currentObjectiveRef.current = newObj;
-              setCurrentObjective(newObj);
+                const newObj: DynamicObjective = {
+                  id: nextStep.id,
+                  title: nextStep.title,
+                  description: nextStep.description,
+                  type: nextStep.type,
+                  targetValue: nextStep.targetValue,
+                  currentProgress: 0,
+                  durationToHold: nextStep.durationToHold,
+                  status: 'ACTIVE',
+                  targetSpecialNodeId: targetNodeId,
+                  windowStart: nextStep.windowStart,
+                  windowEnd: nextStep.windowEnd
+                };
+                currentObjectiveRef.current = newObj;
+                setCurrentObjective(newObj);
+              }
+            } else {
+              // Margen Final (70s - 75s): Clear active objective & target node
+              currentObjectiveRef.current = null;
+              setCurrentObjective(null);
+              targetSpecialNodeIdRef.current = null;
             }
           }
 
@@ -2416,6 +2426,23 @@ export default function App() {
                 />
               </div>
             </div>
+          </div>
+        )}
+
+        {/* MARGEN FINAL (70s - 75s) HUD CARD */}
+        {gameMode === 'partida' && partidaObjectiveIndex >= 3 && !isGameOver && (
+          <div className="mt-1 w-full max-w-xs sm:max-w-md bg-slate-950/85 backdrop-blur-md border border-amber-500/40 rounded-xl px-2.5 py-1.5 flex items-center justify-between shadow-xl pointer-events-auto transition-all animate-fade-in text-left">
+            <div className="flex flex-col min-w-0">
+              <span className="text-[9px] font-mono uppercase tracking-widest text-amber-400 font-bold flex items-center gap-1">
+                <Clock size={10} className="text-amber-400 animate-pulse" /> MARGEN FINAL [70-75s]
+              </span>
+              <span className="text-xs font-semibold text-slate-200 truncate">
+                Consolidando red... ({completedObjectivesCountRef.current}/3 cumplidos)
+              </span>
+            </div>
+            <span className="text-xs font-mono font-bold text-amber-300 shrink-0">
+              {partidaTimeLeft.toFixed(1)}s
+            </span>
           </div>
         )}
       </div>
