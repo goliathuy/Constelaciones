@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Activity, RotateCcw, Trophy, Target, Shuffle } from 'lucide-react';
+import { Activity, RotateCcw, Trophy, Target, Shuffle, ChevronRight, Play } from 'lucide-react';
 import { SystemZone, GameMode, PartidaResult } from '../types';
 
 interface GameOverModalProps {
@@ -8,9 +8,13 @@ interface GameOverModalProps {
   highScore: number;
   activeZone: SystemZone;
   gameMode: GameMode;
+  selectedLevel?: number;
+  unlockedLevel?: number;
   partidaResult?: PartidaResult | null;
   onRestart: (mode?: GameMode) => void;
   onSwitchMode?: (mode: GameMode) => void;
+  onNextLevel?: () => void;
+  onContinueFreePlay?: () => void;
 }
 
 export const GameOverModal: React.FC<GameOverModalProps> = ({
@@ -18,38 +22,43 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   highScore,
   activeZone,
   gameMode,
+  selectedLevel = 1,
+  unlockedLevel = 1,
   partidaResult,
   onRestart,
   onSwitchMode,
+  onNextLevel,
+  onContinueFreePlay,
 }) => {
   const isVictory = partidaResult?.status === 'VICTORY';
   const isPartial = partidaResult?.status === 'PARTIAL';
   const isCollapse = !isVictory && !isPartial;
+  const hasNextLevel = selectedLevel < 6;
 
   return (
     <motion.div
       id="gameover-modal-overlay"
-      className="absolute inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 z-50"
+      className="absolute inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 z-50 overflow-y-auto"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      transition={{ duration: 0.4 }}
+      transition={{ duration: 0.3 }}
     >
       <motion.div
-        className={`bg-slate-900 border rounded-3xl max-w-md w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 text-center shadow-2xl flex flex-col items-center scrollbar-thin ${
+        className={`bg-slate-900 border rounded-3xl max-w-md w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 text-center shadow-2xl flex flex-col items-center scrollbar-thin my-auto ${
           isVictory 
             ? 'border-amber-500/40 shadow-[0_0_50px_rgba(245,158,11,0.2)]' 
             : isPartial 
               ? 'border-sky-500/40 shadow-[0_0_50px_rgba(56,189,248,0.2)]'
               : 'border-red-500/40 shadow-[0_0_50px_rgba(239,68,68,0.2)]'
         }`}
-        initial={{ scale: 0.9, y: 30, opacity: 0 }}
+        initial={{ scale: 0.9, y: 20, opacity: 0 }}
         animate={{ scale: 1, y: 0, opacity: 1 }}
-        exit={{ scale: 0.9, y: 30, opacity: 0 }}
+        exit={{ scale: 0.9, y: 20, opacity: 0 }}
         transition={{ type: "spring", damping: 20, stiffness: 300 }}
       >
         {/* Header Icon Badge */}
-        <div className={`p-3.5 rounded-2xl border mb-4 ${
+        <div className={`p-3.5 rounded-2xl border mb-3 ${
           isVictory 
             ? 'bg-amber-500/10 text-amber-400 border-amber-500/30' 
             : isPartial 
@@ -67,26 +76,30 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
 
         {/* Title & Subtitle */}
         <h1 className="text-2xl sm:text-3xl font-bold font-display tracking-tight text-white mb-1">
-          {isVictory ? '¡VICTORIA EN PARTIDA!' : isPartial ? 'TIEMPO AGOTADO' : 'SISTEMA COLAPSADO'}
+          {isVictory 
+            ? `¡PARTIDA ${selectedLevel} COMPLETADA!` 
+            : isPartial 
+              ? 'TIEMPO AGOTADO' 
+              : 'SISTEMA COLAPSADO'}
         </h1>
-        <p className={`text-xs uppercase tracking-widest font-mono mb-5 ${
+        <p className={`text-xs uppercase tracking-widest font-mono mb-4 ${
           isVictory ? 'text-amber-400' : isPartial ? 'text-sky-400' : 'text-red-400'
         }`}>
           {isVictory 
-            ? '3/3 Objetivos Cumplidos con Éxito' 
+            ? 'Objetivo Cumplido con Éxito' 
             : isPartial 
-              ? 'Resumen de Sesión de 75s' 
+              ? 'Fin de Tiempo de la Partida' 
               : 'Pérdida de Equilibrio Social'}
         </p>
 
         {/* Statistics Card */}
-        <div className="bg-slate-950/70 border border-slate-800/90 rounded-2xl p-4 w-full flex flex-col gap-3 mb-5 text-left font-mono">
+        <div className="bg-slate-950/70 border border-slate-800/90 rounded-2xl p-4 w-full flex flex-col gap-2.5 mb-4 text-left font-mono">
           {gameMode === 'partida' && (
             <>
               <div className="flex justify-between items-center text-xs">
-                <span className="text-slate-400">Objetivos Cumplidos:</span>
+                <span className="text-slate-400">Progreso del Nivel:</span>
                 <span className={`font-bold font-display ${isVictory ? 'text-emerald-400' : 'text-sky-300'}`}>
-                  {partidaResult?.objectivesCompletedCount ?? 0} / {partidaResult?.totalObjectives ?? 3}
+                  {isVictory ? '✓ APRENDIDO' : `${partidaResult?.objectivesCompletedCount ?? 0} / ${partidaResult?.totalObjectives ?? 1}`}
                 </span>
               </div>
               {isVictory && (partidaResult?.timeRemainingBonus ?? 0) > 0 && (
@@ -125,38 +138,61 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
         </div>
 
         {/* Descriptive Summary Paragraph */}
-        <p className="text-xs text-slate-400 leading-relaxed mb-6">
+        <p className="text-xs text-slate-300 leading-relaxed mb-5">
           {isVictory 
-            ? '¡Excelente modulación de red! Mantuviste el equilibrio y completaste la secuencia de objetivos a tiempo.' 
+            ? '¡Excelente modulación! Has dominado el concepto pedagógico de este nivel. Puedes avanzar a la siguiente partida o continuar jugando libremente.' 
             : isPartial 
-              ? `Completaste ${partidaResult?.objectivesCompletedCount ?? 0} de 3 objetivos antes de agotar los 75 segundos. ¡Vuelve a intentarlo para lograr la Victoria!`
+              ? 'No lograste completar el objetivo antes de agotar el tiempo. Reinténtalo para desbloquear el siguiente nivel.'
               : 'El delicado hilo de atracción y dispersión se rompió por más de 10 segundos continuos. Restablece la sintonía para intentarlo de nuevo.'}
         </p>
 
         {/* Action Buttons */}
-        <div className="flex flex-col sm:flex-row gap-2.5 w-full">
-          <button
-            id="restart-game-btn"
-            onClick={() => onRestart(gameMode)}
-            className="flex-1 px-4 py-3 rounded-xl bg-white text-slate-950 font-bold hover:bg-slate-100 flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer text-xs font-sans"
-          >
-            <RotateCcw size={15} />
-            Reintentar ({gameMode === 'partida' ? 'Modo Partida' : 'Modo Endless'})
-          </button>
-
-          {onSwitchMode && (
+        <div className="flex flex-col gap-2 w-full">
+          {isVictory && hasNextLevel && onNextLevel && (
             <button
-              id="switch-mode-btn"
-              onClick={() => onSwitchMode(gameMode === 'partida' ? 'endless' : 'partida')}
-              className="px-4 py-3 rounded-xl bg-slate-800 text-slate-200 hover:text-white hover:bg-slate-700 flex items-center justify-center gap-2 transition-all cursor-pointer text-xs font-sans border border-slate-700/80"
+              id="next-level-btn"
+              onClick={onNextLevel}
+              className="w-full py-3.5 px-4 rounded-xl bg-sky-500 text-slate-950 font-extrabold hover:bg-sky-400 flex items-center justify-center gap-2 shadow-lg hover:shadow-sky-500/20 transition-all cursor-pointer text-xs uppercase tracking-wider font-display"
             >
-              <Shuffle size={14} />
-              Cambiar a {gameMode === 'partida' ? 'Endless' : 'Partida'}
+              <ChevronRight size={18} />
+              Siguiente Partida ({selectedLevel + 1})
             </button>
           )}
+
+          {isVictory && onContinueFreePlay && (
+            <button
+              id="continue-freeplay-btn"
+              onClick={onContinueFreePlay}
+              className="w-full py-3 px-4 rounded-xl bg-purple-500/20 border border-purple-500/50 text-purple-200 hover:bg-purple-500/30 font-bold flex items-center justify-center gap-2 transition-all cursor-pointer text-xs"
+            >
+              <Play size={14} fill="currentColor" />
+              Continuar en Modo Libre
+            </button>
+          )}
+
+          <div className="flex gap-2 w-full pt-1">
+            <button
+              id="restart-game-btn"
+              onClick={() => onRestart(gameMode)}
+              className="flex-1 py-2.5 px-3 rounded-xl bg-slate-800 text-slate-200 hover:text-white hover:bg-slate-700 flex items-center justify-center gap-1.5 transition-all cursor-pointer text-xs font-semibold border border-slate-700"
+            >
+              <RotateCcw size={14} />
+              Reintentar Partida {selectedLevel}
+            </button>
+
+            {onSwitchMode && (
+              <button
+                id="switch-mode-btn"
+                onClick={() => onSwitchMode(gameMode === 'partida' ? 'endless' : 'partida')}
+                className="py-2.5 px-3 rounded-xl bg-slate-900 text-slate-400 hover:text-slate-200 hover:bg-slate-800 flex items-center justify-center gap-1.5 transition-all cursor-pointer text-xs font-semibold border border-slate-800"
+              >
+                <Shuffle size={14} />
+                {gameMode === 'partida' ? 'Endless' : 'Campaña'}
+              </button>
+            )}
+          </div>
         </div>
       </motion.div>
     </motion.div>
   );
 };
-

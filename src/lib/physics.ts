@@ -133,7 +133,7 @@ export function generateIncomingNode(
 }
 
 // Generate the initial batch of nodes inside the bounds (all normal initially for learning phase)
-export function generateInitialNodes(count: number, width: number, height: number): GameNode[] {
+export function generateInitialNodes(count: number, width: number, height: number, spawnRadius: number = 400): GameNode[] {
   const nodes: GameNode[] = [];
   const centerX = width / 2;
   const centerY = height / 2;
@@ -141,9 +141,9 @@ export function generateInitialNodes(count: number, width: number, height: numbe
   for (let i = 0; i < count; i++) {
     const size = 4 + Math.random() * 4;
 
-    // Group initial nodes in a cluster of 400px radius at the center of the virtual world
+    // Group initial nodes in a cluster of specified radius at the center of the virtual world
     const angle = Math.random() * Math.PI * 2;
-    const distance = Math.sqrt(Math.random()) * 400; // Uniform distribution in a 400px radius circle
+    const distance = Math.sqrt(Math.random()) * spawnRadius; // Uniform distribution in specified radius circle
     const x = centerX + Math.cos(angle) * distance;
     const y = centerY + Math.sin(angle) * distance;
 

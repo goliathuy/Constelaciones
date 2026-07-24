@@ -36,7 +36,9 @@ import {
   GameMode,
   GamePreset,
   PartidaResult,
-  PRESET_ESTANDAR
+  PRESET_ESTANDAR,
+  PARTIDA_CAMPAIGN_LEVELS,
+  PartidaLevel
 } from './types';
 import { 
   generateInitialNodes, 
@@ -54,13 +56,11 @@ const getTargetNodesCount = (
   currentScore: number, 
   isMobile: boolean, 
   mode: GameMode = 'endless', 
-  fixedPhase: number = 2
+  selectedLevel: number = 1
 ) => {
   if (mode === 'partida') {
-    if (fixedPhase === 1) return isMobile ? 18 : 25;
-    if (fixedPhase === 2) return isMobile ? 28 : 40;
-    if (fixedPhase === 3) return isMobile ? 42 : 65;
-    return isMobile ? 55 : 95;
+    const lvlCfg = PARTIDA_CAMPAIGN_LEVELS[selectedLevel - 1] || PARTIDA_CAMPAIGN_LEVELS[0];
+    return lvlCfg.nodeCount + (lvlCfg.hasSpecialNode ? 1 : 0);
   }
   if (currentScore < 250) {
     return isMobile ? 18 : 25; // Phase 1
@@ -74,6 +74,18 @@ const getTargetNodesCount = (
 };
 
 export default function App() {
+  // Campaign Progression State
+  const [unlockedLevel, setUnlockedLevel] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('constelaciones_unlocked_level');
+      return saved ? parseInt(saved, 10) : 1;
+    } catch {
+      return 1;
+    }
+  });
+  const [selectedLevel, setSelectedLevel] = useState<number>(1);
+  const selectedLevelRef = useRef<number>(1);
+
   // Game Mode State & Refs
   const [gameMode, setGameMode] = useState<GameMode>('partida');
   const gameModeRef = useRef<GameMode>('partida');
@@ -406,11 +418,11 @@ export default function App() {
   };
 
   // Start / Reset Game
-  const handleStartGame = (mode: GameMode = gameMode, preset: GamePreset = selectedPreset) => {
+  const handleStartGame = (mode: GameMode = gameMode, levelNum: number = selectedLevel) => {
     setGameMode(mode);
     gameModeRef.current = mode;
-    setSelectedPreset(preset);
-    selectedPresetRef.current = preset;
+    setSelectedLevel(levelNum);
+    selectedLevelRef.current = levelNum;
 
     setIsGameOver(false);
     setIsPlaying(true);
@@ -434,18 +446,20 @@ export default function App() {
     targetSpecialNodeIdRef.current = null;
     completedObjectivesCountRef.current = 0;
 
+    const currentLevelConfig: PartidaLevel = PARTIDA_CAMPAIGN_LEVELS[levelNum - 1] || PARTIDA_CAMPAIGN_LEVELS[0];
+
     if (mode === 'partida') {
-      currentPhaseRef.current = preset.fixedPhase; // Fixed Phase 2 for Estándar
-      partidaTimeLeftRef.current = preset.sessionDuration;
-      setPartidaTimeLeft(preset.sessionDuration);
+      currentPhaseRef.current = Math.min(levelNum, 2);
+      partidaTimeLeftRef.current = currentLevelConfig.sessionDuration;
+      setPartidaTimeLeft(currentLevelConfig.sessionDuration);
 
       partidaObjectiveIndexRef.current = 0;
       setPartidaObjectiveIndex(0);
       partidaTransitionTimerRef.current = 0;
       setPartidaTransitionMessage(null);
 
-      if (preset.objectivesSequence.length > 0) {
-        const firstStep = preset.objectivesSequence[0];
+      if (currentLevelConfig.sequenceObjectives && currentLevelConfig.sequenceObjectives.length > 0) {
+        const firstStep = currentLevelConfig.sequenceObjectives[0];
         const firstObj: DynamicObjective = {
           id: firstStep.id,
           title: firstStep.title,
@@ -461,8 +475,18 @@ export default function App() {
         setCurrentObjective(firstObj);
         currentObjectiveRef.current = firstObj;
       } else {
-        setCurrentObjective(null);
-        currentObjectiveRef.current = null;
+        const singleObj: DynamicObjective = {
+          id: currentLevelConfig.objective.id,
+          title: currentLevelConfig.objective.title,
+          description: currentLevelConfig.objective.description,
+          type: currentLevelConfig.objective.type,
+          targetValue: currentLevelConfig.objective.targetValue,
+          currentProgress: 0,
+          durationToHold: currentLevelConfig.objective.durationToHold,
+          status: 'ACTIVE'
+        };
+        setCurrentObjective(singleObj);
+        currentObjectiveRef.current = singleObj;
       }
     } else {
       currentPhaseRef.current = 1;
@@ -471,13 +495,44 @@ export default function App() {
     }
 
     // Create baseline nodes in LOGICAL coordinates
-    const initialPhase = mode === 'partida' ? preset.fixedPhase : 1;
-    const targetCount = getTargetNodesCount(0, isMobileMode, mode, initialPhase);
+    const targetCount = mode === 'partida' 
+      ? (isMobileMode ? Math.min(currentLevelConfig.nodeCount, 40) : currentLevelConfig.nodeCount)
+      : getTargetNodesCount(0, isMobileMode, mode, 1);
+
+    const spawnRadius = mode === 'partida' ? currentLevelConfig.spawnRadius : 400;
+
     nodesRef.current = generateInitialNodes(
       targetCount,
       PHYSICS_CONFIG.WORLD_WIDTH,
-      PHYSICS_CONFIG.WORLD_HEIGHT
+      PHYSICS_CONFIG.WORLD_HEIGHT,
+      spawnRadius
     );
+
+    // If level has special node (Level 4, 5, 6), spawn one inside the cluster
+    if (mode === 'partida' && currentLevelConfig.hasSpecialNode) {
+      const specialType = currentLevelConfig.specialNodeType || (Math.random() < 0.5 ? 'explorador' : 'organizador');
+      const angle = Math.random() * Math.PI * 2;
+      const dist = spawnRadius * 0.7;
+      const centerX = PHYSICS_CONFIG.WORLD_WIDTH / 2;
+      const centerY = PHYSICS_CONFIG.WORLD_HEIGHT / 2;
+      const specialNode: GameNode = {
+        id: Math.random().toString(36).substring(2, 9),
+        x: centerX + Math.cos(angle) * dist,
+        y: centerY + Math.sin(angle) * dist,
+        vx: (Math.random() - 0.5) * 1.5,
+        vy: (Math.random() - 0.5) * 1.5,
+        r: specialType === 'organizador' ? 6.5 : 5.5,
+        energy: 0.3,
+        groupId: null,
+        lifetime: Date.now(),
+        isGhost: false,
+        colorIndex: Math.floor(Math.random() * 4),
+        specialType,
+        connectedTimer: specialType === 'explorador' ? 0 : undefined
+      };
+      nodesRef.current.push(specialNode);
+      targetSpecialNodeIdRef.current = specialNode.id;
+    }
 
     // Reset camera to world center
     cameraRef.current = {
@@ -810,18 +865,20 @@ export default function App() {
           scoreRef.current, 
           isMobileMode, 
           gameModeRef.current, 
-          selectedPresetRef.current.fixedPhase
+          selectedLevelRef.current
         );
         const activeNodesCount = nodesRef.current.filter(n => !n.isGhost).length;
 
         // Session Timer Countdown for Partida Mode
-        if (gameModeRef.current === 'partida') {
+        const currentLvlCfg = PARTIDA_CAMPAIGN_LEVELS[selectedLevelRef.current - 1] || PARTIDA_CAMPAIGN_LEVELS[0];
+        if (gameModeRef.current === 'partida' && currentLvlCfg.sessionDuration > 0) {
           partidaTimeLeftRef.current = Math.max(0, partidaTimeLeftRef.current - dt);
           setPartidaTimeLeft(partidaTimeLeftRef.current);
 
           if (partidaTimeLeftRef.current <= 0 && !isGameOver) {
             const completedCount = completedObjectivesCountRef.current;
-            const totalObjs = selectedPresetRef.current.objectivesSequence.length;
+            const seqObjs = currentLvlCfg.sequenceObjectives || [];
+            const totalObjs = seqObjs.length > 0 ? seqObjs.length : 1;
             const isWin = completedCount >= totalObjs;
 
             setPartidaResult({
@@ -830,92 +887,89 @@ export default function App() {
               totalObjectives: totalObjs,
               timeRemainingBonus: 0,
               score: Math.round(scoreRef.current),
-              timeElapsed: selectedPresetRef.current.sessionDuration
+              timeElapsed: currentLvlCfg.sessionDuration
             });
             setIsGameOver(true);
           }
         }
         
-        // Spawn faster (1.5s instead of 6.0s) if the current active node count is below the dynamic phase target
-        const spawnInterval = activeNodesCount < currentTarget ? 1.5 : PHYSICS_CONFIG.SPAWN_INTERVAL;
+        // Spawning logic:
+        // In Partida mode, do NOT continuously spawn new nodes or ghost existing nodes once max target is reached!
+        const shouldSpawnInPartida = gameModeRef.current === 'partida' && activeNodesCount < currentTarget;
+        const shouldSpawnInEndless = gameModeRef.current === 'endless';
 
-        if (spawnTimerRef.current >= spawnInterval) {
-          spawnTimerRef.current = 0;
-          
-          const maxAllowed = currentTarget;
+        if (shouldSpawnInPartida || shouldSpawnInEndless) {
+          const spawnInterval = activeNodesCount < currentTarget ? 1.5 : PHYSICS_CONFIG.SPAWN_INTERVAL;
 
-          // If limit reached, convert oldest active node to a ghost state
-          if (activeNodesCount >= maxAllowed) {
-            // Find the oldest non-ghost node
-            let oldestIndex = -1;
-            let oldestLifetime = Date.now();
+          if (spawnTimerRef.current >= spawnInterval) {
+            spawnTimerRef.current = 0;
+            
+            const maxAllowed = currentTarget;
 
-            for (let idx = 0; idx < nodesRef.current.length; idx++) {
-              const node = nodesRef.current[idx];
-              if (!node.isGhost && node.lifetime < oldestLifetime) {
-                oldestLifetime = node.lifetime;
-                oldestIndex = idx;
+            // In endless mode, if limit reached, convert oldest active node to a ghost state
+            if (shouldSpawnInEndless && activeNodesCount >= maxAllowed) {
+              let oldestIndex = -1;
+              let oldestLifetime = Date.now();
+
+              for (let idx = 0; idx < nodesRef.current.length; idx++) {
+                const node = nodesRef.current[idx];
+                if (!node.isGhost && node.lifetime < oldestLifetime) {
+                  oldestLifetime = node.lifetime;
+                  oldestIndex = idx;
+                }
+              }
+
+              if (oldestIndex !== -1) {
+                nodesRef.current[oldestIndex].isGhost = true;
+                nodesRef.current[oldestIndex].ghostProgress = 1.0;
               }
             }
 
-            if (oldestIndex !== -1) {
-              nodesRef.current[oldestIndex].isGhost = true;
-              nodesRef.current[oldestIndex].ghostProgress = 1.0;
+            // Generate new node arriving
+            const currentScore = scoreRef.current;
+            let forcedType: 'normal' | 'influencer' | 'disruptor' | 'organizador' | 'explorador' | 'semilla' = 'normal';
+            
+            const activeSpecialCount = nodesRef.current.filter(
+              n => !n.isGhost && n.specialType && n.specialType !== 'normal' && n.specialType !== 'semilla'
+            ).length;
+
+            if (gameModeRef.current === 'partida') {
+              if (currentObjectiveRef.current?.type === 'CONECTAR_ESPECIALES' && activeSpecialCount === 0) {
+                forcedType = Math.random() < 0.5 ? 'explorador' : 'organizador';
+              } else {
+                forcedType = 'normal';
+              }
+            } else if (currentScore < 250) {
+              forcedType = 'normal';
+            } else if (currentScore < 900) {
+              if (activeSpecialCount < 1 && Math.random() < 0.20) {
+                forcedType = Math.random() < 0.5 ? 'explorador' : 'organizador';
+              } else {
+                forcedType = 'normal';
+              }
+            } else if (currentScore < 1800) {
+              if (activeSpecialCount < 2 && Math.random() < 0.25) {
+                const options: Array<'explorador' | 'organizador' | 'influencer' | 'disruptor'> = [
+                  'explorador', 'organizador', 'influencer', 'disruptor'
+                ];
+                forcedType = options[Math.floor(Math.random() * options.length)];
+              } else {
+                forcedType = 'normal';
+              }
+            } else {
+              if (activeSpecialCount < 3 && Math.random() < 0.30) {
+                const options: Array<'explorador' | 'organizador' | 'influencer' | 'disruptor'> = [
+                  'explorador', 'organizador', 'influencer', 'disruptor'
+                ];
+                forcedType = options[Math.floor(Math.random() * options.length)];
+              } else {
+                forcedType = 'normal';
+              }
             }
+
+            const newNode = generateIncomingNode(PHYSICS_CONFIG.WORLD_WIDTH, PHYSICS_CONFIG.WORLD_HEIGHT, forcedType, nodesRef.current);
+            nodesRef.current.push(newNode);
           }
-
-          // Generate new node arriving using Phase constraints & Intelligent Placement GDD guidelines
-          const currentScore = scoreRef.current;
-          let forcedType: 'normal' | 'influencer' | 'disruptor' | 'organizador' | 'explorador' | 'semilla' = 'normal';
-          
-          const activeSpecialCount = nodesRef.current.filter(
-            n => !n.isGhost && n.specialType && n.specialType !== 'normal' && n.specialType !== 'semilla'
-          ).length;
-
-          if (gameModeRef.current === 'partida') {
-            // In Partida mode, Phase is fixed to Phase 2 (or preset phase)
-            // Phase 2 ONLY allows explorador and organizador. Influencers & Disruptors are strictly prohibited!
-            if (currentObjectiveRef.current?.type === 'CONECTAR_ESPECIALES' && activeSpecialCount === 0) {
-              forcedType = Math.random() < 0.5 ? 'explorador' : 'organizador';
-            } else if (activeSpecialCount < 1 && Math.random() < 0.25) {
-              forcedType = Math.random() < 0.5 ? 'explorador' : 'organizador';
-            } else {
-              forcedType = 'normal';
-            }
-          } else if (currentScore < 250) {
-            // Phase 1: only normal nodes
-            forcedType = 'normal';
-          } else if (currentScore < 900) {
-            // Phase 2: max 1 special node of simple type
-            if (activeSpecialCount < 1 && Math.random() < 0.20) {
-              forcedType = Math.random() < 0.5 ? 'explorador' : 'organizador';
-            } else {
-              forcedType = 'normal';
-            }
-          } else if (currentScore < 1800) {
-            // Phase 3: max 2 special nodes of simple or power types
-            if (activeSpecialCount < 2 && Math.random() < 0.25) {
-              const options: Array<'explorador' | 'organizador' | 'influencer' | 'disruptor'> = [
-                'explorador', 'organizador', 'influencer', 'disruptor'
-              ];
-              forcedType = options[Math.floor(Math.random() * options.length)];
-            } else {
-              forcedType = 'normal';
-            }
-          } else {
-            // Phase 4: max 3 special nodes (excluding seeds)
-            if (activeSpecialCount < 3 && Math.random() < 0.30) {
-              const options: Array<'explorador' | 'organizador' | 'influencer' | 'disruptor'> = [
-                'explorador', 'organizador', 'influencer', 'disruptor'
-              ];
-              forcedType = options[Math.floor(Math.random() * options.length)];
-            } else {
-              forcedType = 'normal';
-            }
-          }
-
-          const newNode = generateIncomingNode(PHYSICS_CONFIG.WORLD_WIDTH, PHYSICS_CONFIG.WORLD_HEIGHT, forcedType, nodesRef.current);
-          nodesRef.current.push(newNode);
         }
 
         // 3. Physical calculations updates (using virtual world dimensions)
@@ -978,13 +1032,16 @@ export default function App() {
               const nextVal = Math.max(0, prev - dt);
               if (nextVal <= 0) {
                 if (gameModeRef.current === 'partida') {
+                  const currentLvlCfg = PARTIDA_CAMPAIGN_LEVELS[selectedLevelRef.current - 1] || PARTIDA_CAMPAIGN_LEVELS[0];
+                  const seqObjs = currentLvlCfg.sequenceObjectives || [];
+                  const totalObjs = seqObjs.length > 0 ? seqObjs.length : 1;
                   setPartidaResult({
                     status: 'GAME_OVER',
                     objectivesCompletedCount: completedObjectivesCountRef.current,
-                    totalObjectives: selectedPresetRef.current.objectivesSequence.length,
+                    totalObjectives: totalObjs,
                     timeRemainingBonus: 0,
                     score: Math.round(scoreRef.current),
-                    timeElapsed: selectedPresetRef.current.sessionDuration - partidaTimeLeftRef.current
+                    timeElapsed: currentLvlCfg.sessionDuration > 0 ? currentLvlCfg.sessionDuration - partidaTimeLeftRef.current : 0
                   });
                 }
                 setIsGameOver(true);
@@ -1237,75 +1294,72 @@ export default function App() {
 
         // Dynamic Objectives evaluation
         if (gameModeRef.current === 'partida') {
-          const timeElapsed = selectedPresetRef.current.sessionDuration - partidaTimeLeftRef.current;
-          const sequence = selectedPresetRef.current.objectivesSequence;
+          const currentLvlCfg = PARTIDA_CAMPAIGN_LEVELS[selectedLevelRef.current - 1] || PARTIDA_CAMPAIGN_LEVELS[0];
+          const sequence = currentLvlCfg.sequenceObjectives || [];
 
-          // Determine expected window index based on absolute timeElapsed:
-          // Window 0: 0s - 20s (Objective 1: EVITAR_AISLAMIENTO)
-          // Window 1: 20s - 45s (Objective 2: MANTENER_SINCRONIA)
-          // Window 2: 45s - 70s (Objective 3: CONECTAR_ESPECIALES)
-          // Window 3: 70s - 75s (Margen Final: Sin objetivo activo)
-          let targetWindowIdx = 0;
-          if (timeElapsed >= 70) {
-            targetWindowIdx = 3;
-          } else if (timeElapsed >= 45) {
-            targetWindowIdx = 2;
-          } else if (timeElapsed >= 20) {
-            targetWindowIdx = 1;
-          } else {
-            targetWindowIdx = 0;
-          }
+          if (sequence.length > 0) {
+            const timeElapsed = currentLvlCfg.sessionDuration - partidaTimeLeftRef.current;
 
-          // Window transition trigger (e.g. t reaches 20s, 45s, or 70s)
-          if (targetWindowIdx !== partidaObjectiveIndexRef.current) {
-            // If previous objective was active and not completed before window closed -> FAILED
-            if (currentObjectiveRef.current && currentObjectiveRef.current.status === 'ACTIVE') {
-              const failedObj = { ...currentObjectiveRef.current, status: 'FAILED' as const };
-              currentObjectiveRef.current = failedObj;
-              setCurrentObjective(failedObj);
+            // Determine expected window index based on absolute timeElapsed:
+            let targetWindowIdx = 0;
+            if (timeElapsed >= 70) {
+              targetWindowIdx = 3;
+            } else if (timeElapsed >= 45) {
+              targetWindowIdx = 2;
+            } else if (timeElapsed >= 20) {
+              targetWindowIdx = 1;
+            } else {
+              targetWindowIdx = 0;
             }
 
-            partidaObjectiveIndexRef.current = targetWindowIdx;
-            setPartidaObjectiveIndex(targetWindowIdx);
-
-            if (targetWindowIdx < sequence.length) {
-              const nextStep = sequence[targetWindowIdx];
-              if (nextStep) {
-                let targetNodeId: string | undefined = undefined;
-
-                if (nextStep.type === 'CONECTAR_ESPECIALES') {
-                  // At t=45s: select or spawn a Phase 2 special node (explorador or organizador ONLY)
-                  let targetNode = nodesRef.current.find(n => !n.isGhost && (n.specialType === 'explorador' || n.specialType === 'organizador'));
-                  if (!targetNode) {
-                    const forcedType = Math.random() < 0.5 ? 'explorador' : 'organizador';
-                    targetNode = generateIncomingNode(PHYSICS_CONFIG.WORLD_WIDTH, PHYSICS_CONFIG.WORLD_HEIGHT, forcedType, nodesRef.current);
-                    nodesRef.current.push(targetNode);
-                  }
-                  targetNodeId = targetNode.id;
-                  targetSpecialNodeIdRef.current = targetNode.id;
-                }
-
-                const newObj: DynamicObjective = {
-                  id: nextStep.id,
-                  title: nextStep.title,
-                  description: nextStep.description,
-                  type: nextStep.type,
-                  targetValue: nextStep.targetValue,
-                  currentProgress: 0,
-                  durationToHold: nextStep.durationToHold,
-                  status: 'ACTIVE',
-                  targetSpecialNodeId: targetNodeId,
-                  windowStart: nextStep.windowStart,
-                  windowEnd: nextStep.windowEnd
-                };
-                currentObjectiveRef.current = newObj;
-                setCurrentObjective(newObj);
+            // Window transition trigger
+            if (targetWindowIdx !== partidaObjectiveIndexRef.current) {
+              if (currentObjectiveRef.current && currentObjectiveRef.current.status === 'ACTIVE') {
+                const failedObj = { ...currentObjectiveRef.current, status: 'FAILED' as const };
+                currentObjectiveRef.current = failedObj;
+                setCurrentObjective(failedObj);
               }
-            } else {
-              // Margen Final (70s - 75s): Clear active objective & target node
-              currentObjectiveRef.current = null;
-              setCurrentObjective(null);
-              targetSpecialNodeIdRef.current = null;
+
+              partidaObjectiveIndexRef.current = targetWindowIdx;
+              setPartidaObjectiveIndex(targetWindowIdx);
+
+              if (targetWindowIdx < sequence.length) {
+                const nextStep = sequence[targetWindowIdx];
+                if (nextStep) {
+                  let targetNodeId: string | undefined = undefined;
+
+                  if (nextStep.type === 'CONECTAR_ESPECIALES') {
+                    let targetNode = nodesRef.current.find(n => !n.isGhost && (n.specialType === 'explorador' || n.specialType === 'organizador'));
+                    if (!targetNode) {
+                      const forcedType = Math.random() < 0.5 ? 'explorador' : 'organizador';
+                      targetNode = generateIncomingNode(PHYSICS_CONFIG.WORLD_WIDTH, PHYSICS_CONFIG.WORLD_HEIGHT, forcedType, nodesRef.current);
+                      nodesRef.current.push(targetNode);
+                    }
+                    targetNodeId = targetNode.id;
+                    targetSpecialNodeIdRef.current = targetNode.id;
+                  }
+
+                  const newObj: DynamicObjective = {
+                    id: nextStep.id,
+                    title: nextStep.title,
+                    description: nextStep.description,
+                    type: nextStep.type,
+                    targetValue: nextStep.targetValue,
+                    currentProgress: 0,
+                    durationToHold: nextStep.durationToHold,
+                    status: 'ACTIVE',
+                    targetSpecialNodeId: targetNodeId,
+                    windowStart: nextStep.windowStart,
+                    windowEnd: nextStep.windowEnd
+                  };
+                  currentObjectiveRef.current = newObj;
+                  setCurrentObjective(newObj);
+                }
+              } else {
+                currentObjectiveRef.current = null;
+                setCurrentObjective(null);
+                targetSpecialNodeIdRef.current = null;
+              }
             }
           }
 
@@ -1348,13 +1402,29 @@ export default function App() {
                   return newScore;
                 });
 
+                // Unlock next campaign level
+                setUnlockedLevel(prev => {
+                  const nextLvl = Math.max(prev, selectedLevelRef.current + 1);
+                  try {
+                    localStorage.setItem('constelaciones_unlocked_level', nextLvl.toString());
+                  } catch {
+                    // ignore localstorage errors
+                  }
+                  return nextLvl;
+                });
+
+                const currentLvlCfg = PARTIDA_CAMPAIGN_LEVELS[selectedLevelRef.current - 1] || PARTIDA_CAMPAIGN_LEVELS[0];
+                const seqObjectives = currentLvlCfg.sequenceObjectives || [];
+
                 setFloatingTexts(prev => [
                   ...prev,
                   {
                     id: Math.random().toString(36).substring(2, 9),
                     x: width / 2,
                     y: height * 0.35,
-                    text: `✨ ¡OBJETIVO ${partidaObjectiveIndexRef.current + 1}/3 CUMPLIDO! (+500 PTS) ✨`,
+                    text: seqObjectives.length > 0 
+                      ? `✨ ¡OBJETIVO ${partidaObjectiveIndexRef.current + 1}/${seqObjectives.length} CUMPLIDO! (+500 PTS) ✨`
+                      : `✨ ¡PARTIDA ${selectedLevelRef.current} COMPLETADA! (+500 PTS) ✨`,
                     opacity: 1.0,
                     color: "rgba(245, 158, 11, opacity)"
                   }
@@ -1364,10 +1434,34 @@ export default function App() {
                   ambientSynth.playResonanceSFX();
                 }
 
-                if (partidaObjectiveIndexRef.current === 2) {
-                  // ALL 3 OBJECTIVES COMPLETED - IMMEDIATE VICTORY!
+                if (seqObjectives.length > 0) {
+                  // Sequence level (e.g. Level 6)
+                  if (partidaObjectiveIndexRef.current === seqObjectives.length - 1) {
+                    const timeRemaining = partidaTimeLeftRef.current;
+                    const timeBonus = isFinite(timeRemaining) ? Math.round(timeRemaining * 10) : 0;
+                    const finalScore = Math.round(scoreRef.current + timeBonus);
+
+                    scoreRef.current = finalScore;
+                    setScore(finalScore);
+                    updateHighScore(finalScore);
+
+                    setPartidaResult({
+                      status: 'VICTORY',
+                      objectivesCompletedCount: completedObjectivesCountRef.current,
+                      totalObjectives: seqObjectives.length,
+                      timeRemainingBonus: timeBonus,
+                      score: finalScore,
+                      timeElapsed: currentLvlCfg.sessionDuration - timeRemaining
+                    });
+                    setIsGameOver(true);
+                  } else {
+                    setPartidaTransitionMessage(`✓ OBJETIVO ${partidaObjectiveIndexRef.current + 1}/${seqObjectives.length} COMPLETADO`);
+                    setTimeout(() => setPartidaTransitionMessage(null), 1200);
+                  }
+                } else {
+                  // Single objective level victory (Levels 1..5)
                   const timeRemaining = partidaTimeLeftRef.current;
-                  const timeBonus = Math.round(timeRemaining * 10);
+                  const timeBonus = isFinite(timeRemaining) ? Math.round(timeRemaining * 10) : 0;
                   const finalScore = Math.round(scoreRef.current + timeBonus);
 
                   scoreRef.current = finalScore;
@@ -1376,16 +1470,13 @@ export default function App() {
 
                   setPartidaResult({
                     status: 'VICTORY',
-                    objectivesCompletedCount: completedObjectivesCountRef.current,
-                    totalObjectives: 3,
+                    objectivesCompletedCount: 1,
+                    totalObjectives: 1,
                     timeRemainingBonus: timeBonus,
                     score: finalScore,
-                    timeElapsed: selectedPresetRef.current.sessionDuration - timeRemaining
+                    timeElapsed: 0
                   });
                   setIsGameOver(true);
-                } else {
-                  setPartidaTransitionMessage(`✓ OBJETIVO ${partidaObjectiveIndexRef.current + 1}/3 COMPLETADO`);
-                  setTimeout(() => setPartidaTransitionMessage(null), 1200);
                 }
               } else {
                 const updatedObj = { ...obj, currentProgress: nextProg };
@@ -2166,8 +2257,10 @@ export default function App() {
                 <span className="text-[9px] sm:text-xs font-mono uppercase tracking-widest text-cyan-400 flex items-center gap-1 font-bold">
                   <Clock size={10} className="text-cyan-400 animate-pulse" /> Tiempo
                 </span>
-                <span className={`text-base sm:text-2xl font-bold font-mono tracking-tight ${partidaTimeLeft < 30 ? 'text-rose-400 animate-pulse' : 'text-cyan-200'}`}>
-                  {Math.floor(partidaTimeLeft / 60)}:{(Math.floor(partidaTimeLeft) % 60).toString().padStart(2, '0')}
+                <span className={`text-base sm:text-2xl font-bold font-mono tracking-tight ${partidaTimeLeft > 0 && partidaTimeLeft < 30 ? 'text-rose-400 animate-pulse' : 'text-cyan-200'}`}>
+                  {(PARTIDA_CAMPAIGN_LEVELS[selectedLevel - 1] || PARTIDA_CAMPAIGN_LEVELS[0]).sessionDuration > 0
+                    ? `${Math.floor(partidaTimeLeft / 60)}:${(Math.floor(partidaTimeLeft) % 60).toString().padStart(2, '0')}`
+                    : '∞'}
                 </span>
               </div>
             </>
@@ -2180,9 +2273,9 @@ export default function App() {
             {/* Ecosystem Phase Badge (Compact) / Partida Mode Badge */}
             {gameMode === 'partida' ? (
               <div className="flex flex-col px-3 py-1.5 rounded-xl border backdrop-blur-md bg-purple-950/60 border-purple-500/40 shrink-0">
-                <span className="font-mono text-[8px] text-purple-300 uppercase tracking-widest">🏆 MODO PARTIDA</span>
+                <span className="font-mono text-[8px] text-purple-300 uppercase tracking-widest">🏆 NIVEL {selectedLevel} DE 6</span>
                 <span className="font-bold tracking-wide font-display text-xs text-purple-200">
-                  {selectedPreset.name}
+                  {(PARTIDA_CAMPAIGN_LEVELS[selectedLevel - 1] || PARTIDA_CAMPAIGN_LEVELS[0]).title}
                 </span>
               </div>
             ) : (
@@ -2382,7 +2475,9 @@ export default function App() {
                 <span className="text-[9px] font-mono uppercase tracking-widest text-purple-400 font-bold flex items-center gap-1 shrink-0">
                   <Target size={10} className="text-purple-400 animate-pulse shrink-0" /> 
                   {gameMode === 'partida' 
-                    ? `OBJ ${partidaObjectiveIndex + 1}/${selectedPreset.objectivesSequence.length}`
+                    ? (PARTIDA_CAMPAIGN_LEVELS[selectedLevel - 1]?.sequenceObjectives 
+                        ? `OBJ ${partidaObjectiveIndex + 1}/${PARTIDA_CAMPAIGN_LEVELS[selectedLevel - 1].sequenceObjectives!.length}` 
+                        : `PARTIDA ${selectedLevel}`)
                     : 'OBJ'
                   }
                 </span>
@@ -2662,11 +2757,17 @@ export default function App() {
             isPlaying={isPlaying}
             isMobileMode={isMobileMode}
             selectedMode={gameMode}
+            unlockedLevel={unlockedLevel}
+            selectedLevel={selectedLevel}
+            onSelectLevel={(lvl) => {
+              setSelectedLevel(lvl);
+              selectedLevelRef.current = lvl;
+            }}
             onSelectMode={(mode) => setGameMode(mode)}
             onClose={() => setShowTutorial(false)}
             onPlay={() => {
               setShowTutorial(false);
-              handleStartGame(gameMode);
+              handleStartGame(gameMode, selectedLevel);
             }}
           />
         )}
@@ -2680,9 +2781,24 @@ export default function App() {
             highScore={highScore}
             activeZone={activeZone}
             gameMode={gameMode}
+            selectedLevel={selectedLevel}
+            unlockedLevel={unlockedLevel}
             partidaResult={partidaResult}
-            onRestart={(m) => handleStartGame(m || gameMode)}
-            onSwitchMode={(newMode) => handleStartGame(newMode)}
+            onRestart={(m) => handleStartGame(m || gameMode, selectedLevel)}
+            onSwitchMode={(newMode) => handleStartGame(newMode, selectedLevel)}
+            onNextLevel={() => {
+              const next = selectedLevel + 1;
+              setSelectedLevel(next);
+              selectedLevelRef.current = next;
+              handleStartGame('partida', next);
+            }}
+            onContinueFreePlay={() => {
+              setIsGameOver(false);
+              setGameMode('endless');
+              gameModeRef.current = 'endless';
+              setGraceTimer(999999);
+              graceTimerRef.current = 999999;
+            }}
           />
         )}
       </AnimatePresence>

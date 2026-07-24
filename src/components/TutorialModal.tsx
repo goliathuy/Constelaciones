@@ -1,12 +1,15 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Sparkles, Smartphone, Play, X, Target, TrendingUp } from 'lucide-react';
-import { GameMode } from '../types';
+import { Sparkles, Smartphone, Play, X, Target, TrendingUp, CheckCircle2, Lock, ChevronRight, HelpCircle } from 'lucide-react';
+import { GameMode, PARTIDA_CAMPAIGN_LEVELS, PartidaLevel } from '../types';
 
 interface TutorialModalProps {
   isPlaying: boolean;
   isMobileMode: boolean;
   selectedMode: GameMode;
+  unlockedLevel: number;
+  selectedLevel: number;
+  onSelectLevel: (levelNum: number) => void;
   onSelectMode: (mode: GameMode) => void;
   onClose: () => void;
   onPlay: () => void;
@@ -16,202 +19,292 @@ export const TutorialModal: React.FC<TutorialModalProps> = ({
   isPlaying,
   isMobileMode,
   selectedMode,
+  unlockedLevel,
+  selectedLevel,
+  onSelectLevel,
   onSelectMode,
   onClose,
   onPlay,
 }) => {
+  const [activeTab, setActiveTab] = useState<'campaign' | 'rules'>('campaign');
+  const currentLevelConfig: PartidaLevel = PARTIDA_CAMPAIGN_LEVELS[selectedLevel - 1] || PARTIDA_CAMPAIGN_LEVELS[0];
+
   return (
     <motion.div
       id="tutorial-modal-overlay"
-      className="absolute inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 z-50"
+      className="absolute inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 z-50 overflow-y-auto"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      transition={{ duration: 0.3 }}
+      transition={{ duration: 0.25 }}
     >
       <motion.div
-        className="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 shadow-2xl relative flex flex-col scrollbar-thin"
-        initial={{ scale: 0.92, y: 15, opacity: 0 }}
+        className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full max-h-[92vh] overflow-y-auto p-4 sm:p-6 shadow-2xl relative flex flex-col scrollbar-thin my-auto"
+        initial={{ scale: 0.94, y: 10, opacity: 0 }}
         animate={{ scale: 1, y: 0, opacity: 1 }}
-        exit={{ scale: 0.92, y: 15, opacity: 0 }}
+        exit={{ scale: 0.94, y: 10, opacity: 0 }}
         transition={{ type: "spring", damping: 25, stiffness: 350 }}
       >
-        {/* Close button if game has been already started */}
+        {/* Close button if game is already active */}
         {isPlaying && (
           <button 
             id="close-tutorial-btn"
             onClick={onClose}
-            className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg cursor-pointer transition-colors"
+            className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg cursor-pointer transition-colors z-10"
           >
             <X size={18} />
           </button>
         )}
 
-        <div className="flex items-center gap-3 mb-4">
-          <div className="p-2.5 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/20">
+        {/* Header */}
+        <div className="flex items-center gap-3 mb-3">
+          <div className="p-2.5 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/20 shrink-0">
             <Sparkles size={24} className="animate-pulse" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold font-display tracking-tight text-white">Constelaciones</h1>
-            <p className="text-xs text-sky-400 uppercase tracking-widest font-mono">Experiencia Interactiva de Equilibrio Dinámico</p>
+            <h1 className="text-xl sm:text-2xl font-bold font-display tracking-tight text-white">Constelaciones</h1>
+            <p className="text-[11px] text-sky-400 font-mono uppercase tracking-wider">Aprende y domina el equilibrio de redes complejas</p>
           </div>
         </div>
 
-        {/* Mode Selector Options */}
-        <div className="mb-4 bg-slate-950/60 p-3 rounded-2xl border border-slate-800/90">
-          <span className="text-[10px] font-mono uppercase tracking-widest text-slate-400 font-bold block mb-2">
-            MODO DE JUEGO:
-          </span>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            <button
-              type="button"
-              id="select-mode-partida-btn"
-              onClick={() => onSelectMode('partida')}
-              className={`p-3 rounded-xl border text-left cursor-pointer transition-all flex flex-col gap-1 ${
-                selectedMode === 'partida'
-                  ? 'bg-sky-500/15 border-sky-500/50 text-white shadow-md ring-1 ring-sky-500/30'
-                  : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold font-display flex items-center gap-1.5 text-sky-400">
-                  <Target size={14} /> Modo Partida (75s)
-                </span>
-                {selectedMode === 'partida' && (
-                  <span className="text-[9px] bg-sky-500 text-slate-950 font-bold px-1.5 py-0.5 rounded uppercase">Seleccionado</span>
-                )}
-              </div>
-              <p className="text-[10px] text-slate-300 leading-snug">
-                Preset Estándar: Sesión de 75s con 3 objetivos secuenciales en Fase 2.
-              </p>
-            </button>
+        {/* Tab Navigation */}
+        <div className="flex gap-2 mb-4 border-b border-slate-800 pb-2">
+          <button
+            onClick={() => setActiveTab('campaign')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all flex items-center gap-1.5 ${
+              activeTab === 'campaign'
+                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Target size={14} />
+            <span>Campaña de Partidas (1 - 6)</span>
+          </button>
 
-            <button
-              type="button"
-              id="select-mode-endless-btn"
-              onClick={() => onSelectMode('endless')}
-              className={`p-3 rounded-xl border text-left cursor-pointer transition-all flex flex-col gap-1 ${
-                selectedMode === 'endless'
-                  ? 'bg-purple-500/15 border-purple-500/50 text-white shadow-md ring-1 ring-purple-500/30'
-                  : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold font-display flex items-center gap-1.5 text-purple-400">
-                  <TrendingUp size={14} /> Modo Endless
-                </span>
+          <button
+            onClick={() => setActiveTab('rules')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all flex items-center gap-1.5 ${
+              activeTab === 'rules'
+                ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <HelpCircle size={14} />
+            <span>Reglas y Mecánicas</span>
+          </button>
+        </div>
+
+        {activeTab === 'campaign' ? (
+          <div className="space-y-4">
+            {/* Active Selected Level Focus Card */}
+            {selectedMode === 'partida' && (
+              <div className="bg-gradient-to-br from-sky-950/60 to-slate-950/80 border border-sky-500/40 rounded-2xl p-4 shadow-xl flex flex-col gap-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 rounded bg-sky-500 text-slate-950 font-extrabold text-[10px] uppercase tracking-wider font-mono">
+                      {currentLevelConfig.subtitle}
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-sky-300 font-mono font-bold text-[10px]">
+                      {currentLevelConfig.conceptBadge}
+                    </span>
+                  </div>
+
+                  {selectedLevel <= unlockedLevel ? (
+                    <span className="text-[10px] font-mono font-bold text-emerald-400 flex items-center gap-1">
+                      <CheckCircle2 size={12} /> {selectedLevel < unlockedLevel ? 'Completado' : 'Desbloqueado'}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-mono font-bold text-slate-500 flex items-center gap-1">
+                      <Lock size={12} /> Bloqueado
+                    </span>
+                  )}
+                </div>
+
+                <div>
+                  <h2 className="text-lg font-bold text-white font-display">
+                    Partida {currentLevelConfig.levelNumber}: {currentLevelConfig.title}
+                  </h2>
+                  <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                    {currentLevelConfig.description}
+                  </p>
+                </div>
+
+                <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-2.5 flex items-center justify-between text-xs font-mono">
+                  <span className="text-slate-400 font-semibold">Meta:</span>
+                  <span className="text-amber-300 font-bold">{currentLevelConfig.objective.title}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Campaign 6-Level Grid Picker */}
+            <div>
+              <span className="text-[10px] font-mono uppercase tracking-widest text-slate-400 font-bold block mb-2">
+                SELECCIONÁ NIVEL DE PARTIDA:
+              </span>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {PARTIDA_CAMPAIGN_LEVELS.map((lvl) => {
+                  const isUnlocked = lvl.levelNumber <= unlockedLevel;
+                  const isCompleted = lvl.levelNumber < unlockedLevel;
+                  const isSelected = selectedMode === 'partida' && selectedLevel === lvl.levelNumber;
+
+                  return (
+                    <button
+                      key={lvl.levelNumber}
+                      disabled={!isUnlocked}
+                      onClick={() => {
+                        onSelectMode('partida');
+                        onSelectLevel(lvl.levelNumber);
+                      }}
+                      className={`p-3 rounded-xl border text-left transition-all flex items-center justify-between gap-2.5 ${
+                        !isUnlocked
+                          ? 'bg-slate-950/40 border-slate-800/60 opacity-50 cursor-not-allowed'
+                          : isSelected
+                            ? 'bg-sky-500/20 border-sky-400 text-white ring-1 ring-sky-500/40 shadow-md cursor-pointer'
+                            : 'bg-slate-900/90 border-slate-800/90 text-slate-300 hover:border-slate-700 hover:bg-slate-800/60 cursor-pointer'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-mono font-bold text-xs shrink-0 ${
+                          isCompleted
+                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                            : isSelected
+                              ? 'bg-sky-500 text-slate-950'
+                              : isUnlocked
+                                ? 'bg-slate-800 text-slate-300 border border-slate-700'
+                                : 'bg-slate-950 text-slate-600 border border-slate-900'
+                        }`}>
+                          {lvl.levelNumber}
+                        </div>
+
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-xs font-bold font-display truncate text-white">
+                            {lvl.title}
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-400 truncate">
+                            {lvl.conceptBadge}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="shrink-0 font-mono text-[10px]">
+                        {!isUnlocked ? (
+                          <Lock size={14} className="text-slate-600" />
+                        ) : isCompleted ? (
+                          <CheckCircle2 size={15} className="text-emerald-400" />
+                        ) : (
+                          <ChevronRight size={15} className={isSelected ? 'text-sky-400' : 'text-slate-500'} />
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Endless / Free Play Option */}
+            <div className="pt-2 border-t border-slate-800">
+              <span className="text-[10px] font-mono uppercase tracking-widest text-slate-400 font-bold block mb-2">
+                O MODO SANDBOX LIBRE:
+              </span>
+
+              <button
+                type="button"
+                id="select-mode-endless-btn"
+                onClick={() => onSelectMode('endless')}
+                className={`w-full p-3.5 rounded-xl border text-left cursor-pointer transition-all flex items-center justify-between gap-3 ${
+                  selectedMode === 'endless'
+                    ? 'bg-purple-500/20 border-purple-500/60 text-white ring-1 ring-purple-500/40 shadow-md'
+                    : 'bg-slate-900/80 border-slate-800 text-slate-300 hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/30 shrink-0">
+                    <TrendingUp size={18} />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold font-display flex items-center gap-1.5 text-purple-300">
+                      Modo Libre (Endless)
+                    </span>
+                    <p className="text-[11px] text-slate-400 leading-snug">
+                      Exploración continua sin límites de tiempo con hasta 120 nodos y 4 Fases de evolución.
+                    </p>
+                  </div>
+                </div>
+
                 {selectedMode === 'endless' && (
-                  <span className="text-[9px] bg-purple-500 text-slate-950 font-bold px-1.5 py-0.5 rounded uppercase">Seleccionado</span>
+                  <span className="text-[9px] bg-purple-500 text-slate-950 font-extrabold px-2 py-0.5 rounded uppercase shrink-0">
+                    Seleccionado
+                  </span>
                 )}
-              </div>
-              <p className="text-[10px] text-slate-300 leading-snug">
-                Supervivencia indefinida con progresión libre de 4 Fases por puntaje.
-              </p>
-            </button>
+              </button>
+            </div>
           </div>
-        </div>
+        ) : (
+          /* Rules & Mechanics Tab */
+          <div className="space-y-4 text-xs text-slate-300 leading-relaxed max-h-[60vh] overflow-y-auto pr-1">
+            <p>
+              La red social es un sistema vivo continuo. Tu tarea es modular su tensión manteniéndola en equilibrio en la <b>Zona Saludable (Eje 35% - 65%)</b>. Si la dejas caer al aislamiento total o colapsar en saturación, el sistema colapsará.
+            </p>
 
-        {isMobileMode && (
-          <div className="bg-amber-950/40 border border-amber-500/20 text-amber-300 text-[11px] rounded-xl px-3 py-2 flex items-center gap-2 mb-4">
-            <Smartphone size={14} className="flex-shrink-0 text-amber-400 animate-pulse" />
-            <span><b>Optimización de celular activa:</b> Regulamos el simulador a 55 nodos máximos para un rendimiento suave de 60fps. Puedes cambiar a modo Alto Rendimiento tocando el icono de celular en el encabezado.</span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="bg-slate-950/50 border border-slate-800 rounded-xl p-3 flex flex-col gap-1">
+                <span className="text-[10px] font-mono text-red-400 uppercase font-bold tracking-wider flex items-center gap-1">
+                  ⚠️ Peligro de Aislamiento (&lt;15%)
+                </span>
+                <p className="text-[11px] text-slate-400">
+                  Ocurre si muchos nodos quedan desconectados o solitarios. Suma masa atrayéndolos para formar pequeños grupos.
+                </p>
+              </div>
+
+              <div className="bg-slate-950/50 border border-slate-800 rounded-xl p-3 flex flex-col gap-1">
+                <span className="text-[10px] font-mono text-amber-500 uppercase font-bold tracking-wider flex items-center gap-1">
+                  💥 Peligro de Saturación (&gt;85%)
+                </span>
+                <p className="text-[11px] text-slate-400">
+                  Ocurre si se amontonan de forma caótica. Dispersa la congestión usando Pulsos de Repulsión.
+                </p>
+              </div>
+            </div>
+
+            <div className="border-t border-slate-800 pt-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-white mb-2">
+                🛠️ Herramientas de Modulación:
+              </h3>
+              <ul className="space-y-1.5 list-disc list-inside text-slate-400 text-[11px]">
+                <li>
+                  <b className="text-slate-200">Ancla (Mantener Click / Tocar):</b> Crea un punto de gravedad temporal para agrupar nodos.
+                </li>
+                <li>
+                  <b className="text-slate-200">Pulso (Click Instantáneo):</b> Envía una onda expansiva. Configura si deseas que el Pulso <span className="text-red-400">Repela</span> o <span className="text-sky-400">Atraiga</span>.
+                </li>
+                <li>
+                  <b className="text-slate-200">Resonancia (Espacio / Botón Resonar):</b> Duplica temporalmente la fuerza de toda la red. Úsala para reordenar grupos.
+                </li>
+              </ul>
+            </div>
           </div>
         )}
 
-        <div className="space-y-4 text-xs text-slate-300 leading-relaxed mb-6">
-          <p>
-            La red social es un sistema vivo continuo. Tu tarea es modular su tensión manteniéndola en equilibrio en la <b>Zona Saludable (Eje 35% - 65%)</b>. Si la dejas caer al aislamiento total o colapsar en saturación, el sistema se desvanecerá.
-          </p>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-            <div className="bg-slate-950/40 border border-slate-800/80 rounded-xl p-3 flex flex-col gap-1.5">
-              <span className="text-[10px] font-mono text-red-400 uppercase font-bold tracking-wider flex items-center gap-1.5">
-                ⚠️ Peligro de Aislamiento
-              </span>
-              <p className="text-[11px] text-slate-400">
-                Ocurre si muchos nodos quedan desconectados. Suma masa atrayéndolos para formar pequeños grupos.
-              </p>
-            </div>
-
-            <div className="bg-slate-950/40 border border-slate-800/80 rounded-xl p-3 flex flex-col gap-1.5">
-              <span className="text-[10px] font-mono text-amber-500 uppercase font-bold tracking-wider flex items-center gap-1.5">
-                💥 Peligro de Saturación
-              </span>
-              <p className="text-[11px] text-slate-400">
-                Ocurre si se amontonan de forma caótica. Dispersa la congestión usando Pulsos de Repulsión.
-              </p>
-            </div>
+        {isMobileMode && (
+          <div className="bg-amber-950/40 border border-amber-500/20 text-amber-300 text-[10px] rounded-xl px-3 py-1.5 flex items-center gap-2 mt-3">
+            <Smartphone size={13} className="shrink-0 text-amber-400 animate-pulse" />
+            <span><b>Optimización celular:</b> Modo ergónomico activo a 60fps.</span>
           </div>
+        )}
 
-          <div className="border-t border-slate-800/60 pt-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-white mb-2 flex items-center gap-1.5">
-              🎨 Afinidades Sociales y Objetivos Dinámicos:
-            </h3>
-            <p className="text-[11px] text-slate-400 mb-2">
-              Los nodos se dividen en 4 colores de afinidad. La atracción entre la misma afinidad es potente (<span className="text-sky-300">x1.0</span>) pero débil con afinidades ajenas (<span className="text-pink-300">x0.3</span>). Durante eventos de <b>Fragmentación</b>, la atracción interracial cae a <span className="text-red-400">x0.0</span>, formando colonias aisladas de forma orgánica.
-            </p>
-            <p className="text-[11px] text-slate-400 mb-3">
-              Completa los <b>Objetivos Dinámicos</b> en pantalla (mantener un rango o evitar acumulación durante unos segundos) para reclamar recompensas de <b>+500 puntos</b> de sincronía.
-            </p>
-          </div>
-
-          <div className="border-t border-slate-800/60 pt-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-white mb-2 flex items-center gap-1.5">
-              🌟 Nodos Especiales y Evolución:
-            </h3>
-            <p className="text-[11px] text-slate-400 mb-3">
-              A medida que aumenta tu sincronía, el ecosistema evoluciona en <b>4 Fases</b> introduciendo mayor complejidad. ¡Mira los nuevos tipos que aparecen en el espacio!
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
-              <div className="bg-slate-950/50 p-2 rounded-lg border border-yellow-500/20">
-                <span className="text-yellow-400 font-bold">★ Influencer</span>
-                <p className="text-[10px] text-slate-400 mt-0.5">Atracción masiva. Si pasa más de 5s aislado de su grupo, el sistema entra en caída libre.</p>
-              </div>
-              <div className="bg-slate-950/50 p-2 rounded-lg border border-red-500/20">
-                <span className="text-red-400 font-bold">⚡ Disruptor</span>
-                <p className="text-[10px] text-slate-400 mt-0.5">Empuja a todos a su alrededor. Ideal para aliviar zonas sobrecargadas.</p>
-              </div>
-              <div className="bg-slate-950/50 p-2 rounded-lg border border-cyan-500/20">
-                <span className="text-cyan-400 font-bold">♦ Organizador</span>
-                <p className="text-[10px] text-slate-400 mt-0.5">Incrementa la estabilidad de conexión del grupo, previniendo dispersiones bruscas.</p>
-              </div>
-              <div className="bg-slate-950/50 p-2 rounded-lg border border-emerald-500/20">
-                <span className="text-emerald-400 font-bold">▲ Explorador</span>
-                <p className="text-[10px] text-slate-400 mt-0.5">Rehúye de clusters grandes y explora las zonas vacías. Mantenlo conectado por 20s para asimilarlo y ganar <b>+300 pts</b>.</p>
-              </div>
-              <div className="bg-slate-950/50 p-2 rounded-lg border border-amber-500/20 sm:col-span-2">
-                <span className="text-amber-400 font-bold">🌱 Semilla de Comunidad (Fase 4+)</span>
-                <p className="text-[10px] text-slate-400 mt-0.5">Aparece en zonas desiertas. Si mantienes al menos <b>4 nodos conectados</b> dentro de su radio por 20 segundos, la semilla brota: ¡germinando 4 nuevos nodos de inmediato, ganando <b>+1000 pts</b>, y transformándose en un nodo Organizador estable!</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="border-t border-slate-800/60 pt-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-white mb-2 flex items-center gap-1.5">
-              🛠️ Herramientas de Modulación:
-            </h3>
-            <ul className="space-y-1.5 list-disc list-inside text-slate-400 text-[11px]">
-              <li>
-                <b className="text-slate-200">Ancla (Mantener Click)</b>: Crea un punto de gravedad temporal para agrupar nodos dispersos.
-              </li>
-              <li>
-                <b className="text-slate-200">Pulso (Click Instantáneo)</b>: Envía una onda expansiva. Configura abajo si deseas que el Pulso <span className="text-red-400">Repela (dispersar)</span> o <span className="text-sky-400">Atraiga (conectar)</span>.
-              </li>
-              <li>
-                <b className="text-slate-200">Resonancia (Espacio)</b>: Duplica temporalmente la fuerza de toda la red. Úsala para acelerar un reordenamiento necesario.
-              </li>
-            </ul>
-          </div>
-        </div>
-
-        <div className="flex flex-col sm:flex-row gap-3">
+        {/* Action Play Button */}
+        <div className="mt-4 pt-3 border-t border-slate-800 flex flex-col sm:flex-row gap-2.5">
           <button
             id="modal-play-btn"
             onClick={onPlay}
-            className="flex-1 px-5 py-3 rounded-xl bg-sky-500 text-slate-950 font-bold hover:bg-sky-400 flex items-center justify-center gap-2 shadow-lg hover:shadow-sky-500/20 transition-all cursor-pointer text-sm"
+            className="flex-1 px-5 py-3 rounded-xl bg-sky-500 text-slate-950 font-extrabold hover:bg-sky-400 flex items-center justify-center gap-2 shadow-lg hover:shadow-sky-500/20 transition-all cursor-pointer text-sm font-display"
           >
             <Play size={16} fill="currentColor" />
-            {isPlaying ? 'Reanudar Sincronización' : 'Comenzar Sincronización'}
+            {selectedMode === 'partida'
+              ? `JUGAR PARTIDA ${selectedLevel}: ${currentLevelConfig.title.toUpperCase()}`
+              : 'COMENZAR MODO LIBRE'
+            }
           </button>
         </div>
       </motion.div>
